@@ -32,13 +32,18 @@ import {
   CloudIcon,
   MailIcon,
   GoogleIcon,
+  CoinIcon,
+  PawIcon,
+  LockIcon,
   SendIcon,
 } from "@/components/Icons";
 import { useCloudSync, type CloudUser, type SyncStatus } from "@/lib/sync";
 import { haptic, initTelegram } from "@/lib/telegram";
+import { GOAL_BONUS, progressOf } from "@/lib/progress";
+import { SCENES, sceneById } from "@/lib/scenes";
 
 type Mode = "focus" | "short" | "long";
-type Tab = "timer" | "tasks" | "stats" | "me";
+type Tab = "timer" | "tasks" | "pet" | "stats" | "me";
 
 const MODE_LABEL: Record<Mode, string> = {
   focus: "Fokus",
@@ -157,6 +162,7 @@ export default function App() {
   const [cycle, setCycle] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [celebrateUntil, setCelebrateUntil] = useState(0);
+  const [lastReward, setLastReward] = useState(0);
   const [dizzyUntil, setDizzyUntil] = useState(0);
   const pokes = useRef<number[]>([]);
 
@@ -180,6 +186,11 @@ export default function App() {
   const total = dur(mode);
   const today = todaySessions(sessions);
   const streak = streakOf(sessions);
+  const progress = useMemo(
+    () => progressOf(sessions, settings),
+    [sessions, settings],
+  );
+  const scene = sceneById(settings.scene);
   const activeTask =
     tasks.find((t) => t.id === activeTaskId && !t.completed) ?? null;
 
@@ -197,6 +208,10 @@ export default function App() {
     if (settings.sound) chime();
     haptic.success();
     if (mode === "focus") {
+      setLastReward(
+        settings.focus +
+          (today.length + 1 === settings.dailyGoal ? GOAL_BONUS : 0),
+      );
       setSessions((s) => [
         ...s,
         { id: `s${t}`, at: t, minutes: settings.focus, taskId: activeTask?.id },
@@ -214,7 +229,16 @@ export default function App() {
     } else {
       switchMode("focus");
     }
-  }, [mode, settings, activeTask, cycle, setSessions, setTasks, switchMode]);
+  }, [
+    mode,
+    settings,
+    activeTask,
+    cycle,
+    today.length,
+    setSessions,
+    setTasks,
+    switchMode,
+  ]);
 
   useEffect(() => {
     // taymer nolga yetganda sessiyani yakunlash (tashqi vaqt manbasiga reaksiya)
@@ -304,9 +328,27 @@ export default function App() {
                   Fokus
                 </h1>
               </div>
-              <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,.06)]">
-                <FlameIcon className="h-[18px] w-[18px] text-[#C93400]" />
-                <span className="text-[15px] font-bold">{streak} kun</span>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="flex items-center gap-1.5 rounded-full bg-white px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,.06)]"
+                  aria-label={`${streak} kunlik streak`}
+                >
+                  <FlameIcon className="h-[18px] w-[18px] text-[#C93400]" />
+                  <span className="text-[15px] font-bold tabular-nums">
+                    {streak}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTab("pet")}
+                  className="flex items-center gap-1.5 rounded-full bg-white px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,.06)]"
+                  aria-label={`${progress.coins} tanga, do'konni ochish`}
+                >
+                  <CoinIcon className="h-[18px] w-[18px]" />
+                  <span className="text-[15px] font-bold tabular-nums">
+                    {progress.coins}
+                  </span>
+                </button>
               </div>
             </header>
 
@@ -393,7 +435,15 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-end gap-2">
+            <div
+              className={`relative flex items-end gap-2 ${scene.id === "plain" ? "" : "rounded-[22px] px-2 pt-1"}`}
+              style={scene.style}
+            >
+              {now < celebrateUntil && mode !== "focus" && (
+                <span className="df-coin pointer-events-none absolute left-16 top-0 z-10 flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[14px] font-bold shadow-md">
+                  <CoinIcon className="h-4 w-4" />+{lastReward}
+                </span>
+              )}
               <Companion
                 mood={mood}
                 onPoke={onPoke}
@@ -466,6 +516,14 @@ export default function App() {
           />
         )}
 
+        {tab === "pet" && (
+          <PetView
+            progress={progress}
+            settings={settings}
+            setSettings={setSettings}
+          />
+        )}
+
         {tab === "stats" && <StatsView sessions={sessions} streak={streak} />}
 
         {tab === "me" && (
@@ -478,12 +536,13 @@ export default function App() {
 
       <nav
         aria-label="Asosiy menyu"
-        className="fixed bottom-0 left-1/2 grid w-full max-w-[440px] -translate-x-1/2 grid-cols-4 border-t border-[#E5E5EA] bg-white/95 px-2 pb-[max(env(safe-area-inset-bottom),18px)] pt-1.5 backdrop-blur"
+        className="fixed bottom-0 left-1/2 grid w-full max-w-[440px] -translate-x-1/2 grid-cols-5 border-t border-[#E5E5EA] bg-white/95 px-2 pb-[max(env(safe-area-inset-bottom),18px)] pt-1.5 backdrop-blur"
       >
         {(
           [
             ["timer", "Taymer", TimerIcon],
             ["tasks", "Reja", ListIcon],
+            ["pet", "Kompanyon", PawIcon],
             ["stats", "Statistika", ChartIcon],
             ["me", "Profil", UserIcon],
           ] as const
@@ -852,7 +911,10 @@ function AccountView({
               <div className="flex items-center gap-2.5 rounded-2xl bg-[#F5F5F7] px-3.5 py-3">
                 <SendIcon className="h-5 w-5 shrink-0 text-[#229ED9]" />
                 <span className="text-[15px] font-medium">
-                  Telegram ulangan{cloud.telegramLink.username ? `: @${cloud.telegramLink.username}` : ""}
+                  Telegram ulangan
+                  {cloud.telegramLink.username
+                    ? `: @${cloud.telegramLink.username}`
+                    : ""}
                 </span>
               </div>
             ) : (
@@ -860,14 +922,21 @@ function AccountView({
                 type="button"
                 onClick={async () => {
                   const r = await cloud.linkTelegram();
-                  if (r.error) alert("Telegram'ni ulab bo'lmadi. Bir ozdan keyin qayta urinib ko'ring.");
+                  if (r.error)
+                    alert(
+                      "Telegram'ni ulab bo'lmadi. Bir ozdan keyin qayta urinib ko'ring.",
+                    );
                 }}
                 className="flex items-center gap-2.5 rounded-2xl bg-[#229ED9]/10 px-3.5 py-3 text-left"
               >
                 <SendIcon className="h-5 w-5 shrink-0 text-[#229ED9]" />
                 <span className="flex flex-col">
-                  <span className="text-[15px] font-semibold text-[#136C99]">Telegram&apos;ni ulash</span>
-                  <span className="text-[13px] text-[#6E6E73]">Botda ham shu vazifa va sprintlar chiqadi</span>
+                  <span className="text-[15px] font-semibold text-[#136C99]">
+                    Telegram&apos;ni ulash
+                  </span>
+                  <span className="text-[13px] text-[#6E6E73]">
+                    Botda ham shu vazifa va sprintlar chiqadi
+                  </span>
                 </span>
               </button>
             ))}
@@ -1156,7 +1225,181 @@ function SettingsView({
             className="relative h-[31px] w-[51px] rounded-full bg-[#E9E9EB] transition-colors peer-checked:bg-[#34C759] peer-focus-visible:ring-2 peer-focus-visible:ring-(--accent) after:absolute after:left-[2px] after:top-[2px] after:h-[27px] after:w-[27px] after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5"
           />
         </label>
+        {divider}
+        <label className="flex min-h-[54px] cursor-pointer items-center justify-between px-4">
+          <span className="flex flex-col">
+            <span className="text-[16px]">Telegram eslatmalari</span>
+            <span className="text-[13px] text-[#6E6E73]">
+              Har kuni 20:00 da natija yoki eslatma
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={settings.reminders}
+            onChange={(e) => set("reminders", e.target.checked)}
+            className="peer sr-only"
+          />
+          <span
+            aria-hidden
+            className="relative h-[31px] w-[51px] rounded-full bg-[#E9E9EB] transition-colors peer-checked:bg-[#34C759] peer-focus-visible:ring-2 peer-focus-visible:ring-(--accent) after:absolute after:left-[2px] after:top-[2px] after:h-[27px] after:w-[27px] after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5"
+          />
+        </label>
       </section>
+    </>
+  );
+}
+
+function PetView({
+  progress,
+  settings,
+  setSettings,
+}: {
+  progress: ReturnType<typeof progressOf>;
+  settings: Settings;
+  setSettings: (f: (s: Settings) => Settings) => void;
+}) {
+  const [happy, setHappy] = useState(false);
+  const scene = sceneById(settings.scene);
+  const owned = new Set(["plain", ...(settings.owned ?? [])]);
+  const mood: Mood = happy ? "happy" : "idle";
+
+  const pick = (id: string, price: number, minLevel: number) => {
+    if (owned.has(id)) {
+      setSettings((s) => ({ ...DEFAULT_SETTINGS, ...s, scene: id }));
+      haptic.select();
+      return;
+    }
+    if (progress.level < minLevel || progress.coins < price) return;
+    setSettings((s) => ({
+      ...DEFAULT_SETTINGS,
+      ...s,
+      owned: [...(s.owned ?? []), id],
+      scene: id,
+    }));
+    haptic.success();
+    setHappy(true);
+    setTimeout(() => setHappy(false), 2500);
+  };
+
+  return (
+    <>
+      <header className="flex items-end justify-between">
+        <div>
+          <p className="text-[13px] font-semibold uppercase tracking-[0.4px] text-[#6E6E73]">
+            Do&apos;sting
+          </p>
+          <h1 className="text-[34px] font-bold leading-tight tracking-[-0.8px]">
+            Kompanyon
+          </h1>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,.06)]">
+          <CoinIcon className="h-[18px] w-[18px]" />
+          <span className="text-[15px] font-bold tabular-nums">
+            {progress.coins}
+          </span>
+        </div>
+      </header>
+
+      <section
+        className="relative flex flex-col items-center overflow-hidden rounded-[24px] bg-white pb-4 pt-3"
+        style={scene.id === "plain" ? undefined : scene.style}
+      >
+        <Companion
+          mood={mood}
+          className="h-[200px] w-[180px]"
+          heightFrac={0.86}
+        />
+        <div className="mt-1 w-[86%] rounded-2xl bg-white/90 p-3 shadow-[0_1px_2px_rgba(0,0,0,.05)] backdrop-blur">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[17px] font-bold">
+              {progress.level}-daraja
+            </span>
+            <span className="text-[13px] font-medium tabular-nums text-[#6E6E73]">
+              {progress.into} / {progress.need} daq
+            </span>
+          </div>
+          <div
+            className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#E9E9EF]"
+            role="progressbar"
+            aria-label="Keyingi darajagacha"
+            aria-valuenow={Math.round(progress.pct * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full bg-(--accent) transition-[width] duration-700"
+              style={{ width: `${Math.max(3, progress.pct * 100)}%` }}
+            />
+          </div>
+          <p className="mt-2 text-[13px] leading-snug text-[#6E6E73]">
+            Har bir fokus daqiqasi 1 tanga va 1 tajriba beradi. Kunlik maqsadni
+            bajarsangiz yana +{GOAL_BONUS} tanga.
+          </p>
+        </div>
+      </section>
+
+      <div className="flex items-baseline justify-between px-1 pt-1">
+        <h2 className="text-[22px] font-bold tracking-[-0.4px]">Sahnalar</h2>
+        <span className="text-[13px] text-[#6E6E73]">
+          Kompanyon ortidagi fon
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        {SCENES.map((sc) => {
+          const has = owned.has(sc.id);
+          const active =
+            settings.scene === sc.id || (!settings.scene && sc.id === "plain");
+          const locked = !has && progress.level < sc.minLevel;
+          const poor = !has && !locked && progress.coins < sc.price;
+          return (
+            <button
+              key={sc.id}
+              type="button"
+              disabled={locked || poor}
+              onClick={() => pick(sc.id, sc.price, sc.minLevel)}
+              aria-pressed={active}
+              className={`flex flex-col gap-2 rounded-[18px] bg-white p-2.5 text-left transition active:scale-[.98] disabled:active:scale-100 ${active ? "ring-2 ring-(--accent)" : ""}`}
+            >
+              <span
+                className="relative h-[74px] w-full rounded-xl border border-black/5"
+                style={sc.id === "plain" ? { background: "#F5F5F7" } : sc.style}
+              >
+                {locked && (
+                  <span
+                    className={`absolute inset-0 flex items-center justify-center rounded-xl ${sc.dark ? "bg-black/30" : "bg-white/55"}`}
+                  >
+                    <LockIcon
+                      className={`h-5 w-5 ${sc.dark ? "text-white" : "text-[#3A3A3C]"}`}
+                    />
+                  </span>
+                )}
+              </span>
+              <span className="flex flex-col gap-0.5 px-0.5">
+                <span className="text-[15px] font-semibold leading-tight">
+                  {sc.name}
+                </span>
+                <span className="text-[13px] font-semibold text-[#6E6E73]">
+                  {active ? (
+                    <span className="text-(--accent)">Tanlangan</span>
+                  ) : has ? (
+                    "Sizda bor"
+                  ) : locked ? (
+                    `${sc.minLevel}-darajada ochiladi`
+                  ) : (
+                    <span
+                      className={`flex items-center gap-1 ${poor ? "opacity-60" : "text-[#1D1D1F]"}`}
+                    >
+                      <CoinIcon className="h-4 w-4" />
+                      {sc.price}
+                    </span>
+                  )}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </>
   );
 }

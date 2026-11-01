@@ -106,3 +106,50 @@ export async function fsDelete(path: string) {
   const res = await fetch(`${fsBase()}/${path}`, { method: "DELETE", headers: await fsHeaders() });
   if (!res.ok && res.status !== 404) throw new Error(`firestore delete ${res.status}`);
 }
+
+export type FsDoc = { name: string; fields?: Record<string, FsAny> };
+export type FsAny = FsValue & {
+  doubleValue?: number;
+  mapValue?: { fields?: Record<string, FsAny> };
+  arrayValue?: { values?: FsAny[] };
+};
+export const fsNum = (v?: FsAny) => Number(v?.integerValue ?? v?.doubleValue ?? 0);
+export const docId = (d: FsDoc) => d.name.split("/").pop() ?? "";
+
+// Kolleksiyadagi barcha hujjatlar (sahifalab)
+export async function fsList(collection: string, fields?: string[]) {
+  const out: FsDoc[] = [];
+  let pageToken = "";
+  do {
+    const q = new URLSearchParams({ pageSize: "300" });
+    if (pageToken) q.set("pageToken", pageToken);
+    for (const f of fields ?? []) q.append("mask.fieldPaths", f);
+    const res = await fetch(`${fsBase()}/${collection}?${q}`, { headers: await fsHeaders() });
+    if (!res.ok) throw new Error(`firestore list ${res.status}`);
+    const data = (await res.json()) as { documents?: FsDoc[]; nextPageToken?: string };
+    out.push(...(data.documents ?? []));
+    pageToken = data.nextPageToken ?? "";
+  } while (pageToken);
+  return out;
+}
+
+// users/{uid}/sessions dan berilgan vaqtdan keyingilar
+export async function fsSessionsSince(uid: string, sinceMs: number) {
+  const res = await fetch(`${fsBase()}/users/${encodeURIComponent(uid)}:runQuery`, {
+    method: "POST",
+    headers: await fsHeaders(),
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: "sessions" }],
+        where: {
+          fieldFilter: { field: { fieldPath: "at" }, op: "GREATER_THAN_OR_EQUAL", value: { integerValue: String(sinceMs) } },
+        },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`firestore query ${res.status}`);
+  const rows = (await res.json()) as { document?: FsDoc }[];
+  return rows
+    .filter((r) => r.document)
+    .map((r) => ({ at: fsNum(r.document!.fields?.at), minutes: fsNum(r.document!.fields?.minutes) }));
+}

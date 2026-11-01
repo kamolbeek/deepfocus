@@ -17,6 +17,16 @@ body {
 }
 .df-z { animation: df-float 2.4s ease-out infinite; opacity: 0; }
 
+@keyframes df-coin {
+  0% { transform: translateY(10px) scale(.6); opacity: 0; }
+  15% { transform: translateY(0) scale(1.08); opacity: 1; }
+  25% { transform: translateY(0) scale(1); }
+  80% { opacity: 1; }
+  100% { transform: translateY(-26px); opacity: 0; }
+}
+.df-coin { animation: df-coin 2.6s ease-out forwards; }
+
 @media (prefers-reduced-motion: reduce) {
   .df-z { animation: none; }
+  .df-coin { animation: none; }
 }

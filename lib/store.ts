@@ -26,6 +26,9 @@ export type Settings = {
   dailyGoal: number;
   sound: boolean;
   accent: AccentId;
+  scene: string; // kompanyon ortidagi sahna
+  owned: string[]; // sotib olingan sahnalar
+  reminders: boolean; // Telegram eslatmalari
 };
 
 export type AccentId = "violet" | "blue" | "green" | "pink" | "orange";
@@ -46,6 +49,9 @@ export const DEFAULT_SETTINGS: Settings = {
   dailyGoal: 4,
   sound: true,
   accent: "violet",
+  scene: "plain",
+  owned: [],
+  reminders: true,
 };
 
 function read<T>(key: string, fallback: T): T {

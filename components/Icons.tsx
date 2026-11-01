@@ -111,3 +111,25 @@ export const SendIcon = ({ className }: P) => (
     <path d="M21 3 14.5 21l-4-7.5L3 9.5 21 3Z" />
   </svg>
 );
+export const CoinIcon = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" aria-hidden className={className}>
+    <circle cx="12" cy="12" r="10" fill="#F5B301" />
+    <circle cx="12" cy="12" r="7" fill="none" stroke="#FFD95A" strokeWidth="1.6" />
+    <path d="M12 8.2v7.6M9.8 10h3.6a1.4 1.4 0 0 1 0 2.8h-2.8a1.4 1.4 0 0 0 0 2.8h3.6" fill="none" stroke="#B57F00" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+);
+export const PawIcon = ({ className }: P) => (
+  <svg {...base} className={className}>
+    <path d="M12 21c-3.5 0-6-2-6-4.5S8.7 12 12 12s6 2 6 4.5-2.5 4.5-6 4.5Z" />
+    <circle cx="5.5" cy="9.5" r="1.8" />
+    <circle cx="9.5" cy="5.5" r="1.8" />
+    <circle cx="14.5" cy="5.5" r="1.8" />
+    <circle cx="18.5" cy="9.5" r="1.8" />
+  </svg>
+);
+export const LockIcon = ({ className }: P) => (
+  <svg {...base} className={className}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </svg>
+);
