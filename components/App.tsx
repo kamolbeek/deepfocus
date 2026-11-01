@@ -26,10 +26,16 @@ import {
   TargetIcon,
   TimerIcon,
   TrashIcon,
+  UserIcon,
+  CloudIcon,
+  MailIcon,
+  GoogleIcon,
 } from "@/components/Icons";
+import { useCloudSync, type SyncStatus } from "@/lib/sync";
+import type { User } from "@supabase/supabase-js";
 
 type Mode = "focus" | "short" | "long";
-type Tab = "timer" | "tasks" | "stats";
+type Tab = "timer" | "tasks" | "stats" | "me";
 
 const MODE_LABEL: Record<Mode, string> = { focus: "Fokus", short: "Qisqa tanaffus", long: "Uzun tanaffus" };
 const WEEKDAYS = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
@@ -74,9 +80,18 @@ const fmt = (ms: number) => {
 };
 
 export default function App() {
-  const [settings] = usePersisted<Settings>("df.settings", DEFAULT_SETTINGS);
-  const [tasks, setTasks] = usePersisted<Task[]>("df.tasks", []);
-  const [sessions, setSessions] = usePersisted<Session[]>("df.sessions", []);
+  const [settings, setSettings, settingsReady] = usePersisted<Settings>("df.settings", DEFAULT_SETTINGS);
+  const [tasks, setTasks, tasksReady] = usePersisted<Task[]>("df.tasks", []);
+  const [sessions, setSessions, sessionsReady] = usePersisted<Session[]>("df.sessions", []);
+  const cloud = useCloudSync({
+    ready: settingsReady && tasksReady && sessionsReady,
+    tasks,
+    setTasks,
+    sessions,
+    setSessions,
+    settings,
+    setSettings,
+  });
   const [activeTaskId, setActiveTaskId] = usePersisted<string | null>("df.activeTask", null);
   const [tab, setTab] = useState<Tab>("timer");
 
@@ -122,7 +137,7 @@ export default function App() {
     const t = Date.now();
     if (settings.sound) chime();
     if (mode === "focus") {
-      setSessions((s) => [...s, { at: t, minutes: settings.focus, taskId: activeTask?.id }]);
+      setSessions((s) => [...s, { id: `s${t}`, at: t, minutes: settings.focus, taskId: activeTask?.id }]);
       if (activeTask) setTasks((ts) => ts.map((x) => (x.id === activeTask.id ? { ...x, done: x.done + 1 } : x)));
       const c = cycle + 1;
       setCycle(c);
@@ -308,17 +323,20 @@ export default function App() {
         )}
 
         {tab === "stats" && <StatsView sessions={sessions} streak={streak} />}
+
+        {tab === "me" && <AccountView cloud={cloud} sessions={sessions} tasks={tasks} />}
       </main>
 
       <nav
         aria-label="Asosiy menyu"
-        className="fixed bottom-0 left-1/2 grid w-full max-w-[440px] -translate-x-1/2 grid-cols-3 border-t border-[#E5E5EA] bg-white/95 px-2 pb-[max(env(safe-area-inset-bottom),18px)] pt-1.5 backdrop-blur"
+        className="fixed bottom-0 left-1/2 grid w-full max-w-[440px] -translate-x-1/2 grid-cols-4 border-t border-[#E5E5EA] bg-white/95 px-2 pb-[max(env(safe-area-inset-bottom),18px)] pt-1.5 backdrop-blur"
       >
         {(
           [
             ["timer", "Taymer", TimerIcon],
             ["tasks", "Reja", ListIcon],
             ["stats", "Statistika", ChartIcon],
+            ["me", "Profil", UserIcon],
           ] as const
         ).map(([id, label, Icon]) => (
           <button
@@ -487,6 +505,183 @@ function StatsView({ sessions, streak }: { sessions: Session[]; streak: number }
           </div>
         ))}
       </div>
+    </>
+  );
+}
+
+const STATUS_TEXT: Record<SyncStatus, string> = {
+  off: "Bulut hali ulanmagan",
+  "signed-out": "Kirmagansiz",
+  syncing: "Saqlanmoqda...",
+  synced: "Hammasi bulutda saqlangan",
+  error: "Internet yo'q yoki xato. Keyinroq o'zi qayta urinadi",
+};
+
+function AccountView({
+  cloud,
+  sessions,
+  tasks,
+}: {
+  cloud: {
+    enabled: boolean;
+    user: User | null;
+    status: SyncStatus;
+    signInGoogle: () => Promise<{ error?: string }>;
+    signInEmail: (email: string) => Promise<{ error?: string }>;
+    signOut: () => Promise<void>;
+    refresh: () => Promise<void>;
+  };
+  sessions: Session[];
+  tasks: Task[];
+}) {
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const totalMin = sessions.reduce((a, s) => a + s.minutes, 0);
+
+  const stats = (
+    <div className="grid grid-cols-3 gap-2.5">
+      {[
+        [String(sessions.length), "jami sprint"],
+        [`${Math.floor(totalMin / 60)} soat`, "jami fokus"],
+        [String(tasks.filter((t) => t.completed).length), "bajarilgan vazifa"],
+      ].map(([v, l]) => (
+        <div key={l} className="flex flex-col gap-0.5 rounded-2xl bg-white p-3">
+          <span className="text-[22px] font-bold tracking-[-0.5px]">{v}</span>
+          <span className="text-xs text-[#6E6E73]">{l}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <>
+      <header>
+        <p className="text-[13px] font-semibold uppercase tracking-[0.4px] text-[#6E6E73]">Hisob</p>
+        <h1 className="text-[34px] font-bold leading-tight tracking-[-0.8px]">Profil</h1>
+      </header>
+
+      {!cloud.enabled && (
+        <section className="flex flex-col gap-1.5 rounded-[20px] bg-white p-[18px]">
+          <p className="text-[17px] font-semibold">Ma&apos;lumotlar shu qurilmada saqlanyapti</p>
+          <p className="text-[15px] leading-snug text-[#6E6E73]">
+            Tez orada hisobga kirib, vazifa va sprintlaringizni boshqa qurilmada ham ko&apos;ra olasiz.
+          </p>
+        </section>
+      )}
+
+      {cloud.enabled && cloud.user && (
+        <section className="flex flex-col gap-4 rounded-[20px] bg-white p-[18px]">
+          <div className="flex items-center gap-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#EEEEFD] text-[19px] font-bold text-[#5E5CE6]">
+              {(cloud.user.email ?? "?").slice(0, 1).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[17px] font-semibold">{cloud.user.user_metadata?.full_name ?? cloud.user.email}</p>
+              <p className="truncate text-[13px] text-[#6E6E73]">{cloud.user.email}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => cloud.refresh()}
+            className="flex items-center gap-2.5 rounded-2xl bg-[#F5F5F7] px-3.5 py-3 text-left"
+          >
+            <CloudIcon className={`h-5 w-5 shrink-0 ${cloud.status === "error" ? "text-[#FF3B30]" : "text-[#5E5CE6]"}`} />
+            <span className="text-[15px] font-medium" aria-live="polite">
+              {STATUS_TEXT[cloud.status]}
+            </span>
+          </button>
+          <button type="button" onClick={() => cloud.signOut()} className="h-12 rounded-2xl text-[17px] font-semibold text-[#FF3B30]">
+            Chiqish
+          </button>
+        </section>
+      )}
+
+      {cloud.enabled && !cloud.user && (
+        <section className="flex flex-col gap-3 rounded-[20px] bg-white p-[18px]">
+          <div className="flex flex-col gap-1">
+            <p className="text-[17px] font-semibold">Natijalaringiz yo&apos;qolmasin</p>
+            <p className="text-[15px] leading-snug text-[#6E6E73]">
+              Hisobga kirsangiz, vazifa va sprintlaringiz bulutda saqlanadi va telefon, kompyuterda bir xil ko&apos;rinadi.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setErr("");
+              const r = await cloud.signInGoogle();
+              if (r.error) setErr("Google orqali kirib bo'lmadi. Email bilan urinib ko'ring.");
+              setBusy(false);
+            }}
+            className="flex h-[52px] items-center justify-center gap-2.5 rounded-2xl border border-[#D1D1D6] text-[17px] font-semibold disabled:opacity-60"
+          >
+            <GoogleIcon className="h-5 w-5" />
+            Google bilan kirish
+          </button>
+          <div className="flex items-center gap-3 text-[13px] text-[#8E8E93]">
+            <span className="h-px flex-1 bg-[#E5E5EA]" />
+            yoki
+            <span className="h-px flex-1 bg-[#E5E5EA]" />
+          </div>
+          {sent ? (
+            <div className="flex items-start gap-2.5 rounded-2xl bg-[#EEEEFD] p-3.5" role="status">
+              <MailIcon className="mt-0.5 h-5 w-5 shrink-0 text-[#5E5CE6]" />
+              <p className="text-[15px] leading-snug">
+                <b>{email}</b> manziliga havola yubordik. Pochtangizni ochib, havolani bosing.
+              </p>
+            </div>
+          ) : (
+            <form
+              className="flex flex-col gap-2.5"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const v = email.trim();
+                if (!/^\S+@\S+\.\S+$/.test(v)) {
+                  setErr("Email manzil to'g'ri yozilmagan.");
+                  return;
+                }
+                setBusy(true);
+                setErr("");
+                const r = await cloud.signInEmail(v);
+                if (r.error) setErr("Havolani yuborib bo'lmadi. Bir ozdan keyin qayta urinib ko'ring.");
+                else setSent(true);
+                setBusy(false);
+              }}
+            >
+              <label htmlFor="df-email" className="sr-only">
+                Email
+              </label>
+              <input
+                id="df-email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="email@manzil.uz"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="h-12 rounded-2xl bg-[#F5F5F7] px-4 text-[17px] outline-none focus:ring-2 focus:ring-[#5E5CE6]"
+              />
+              <button
+                type="submit"
+                disabled={busy}
+                className="h-[52px] rounded-2xl bg-[#5E5CE6] text-[17px] font-semibold text-white disabled:opacity-60"
+              >
+                Email orqali kirish
+              </button>
+            </form>
+          )}
+          {err && (
+            <p className="text-[13px] text-[#FF3B30]" role="alert">
+              {err}
+            </p>
+          )}
+        </section>
+      )}
+
+      {stats}
     </>
   );
 }

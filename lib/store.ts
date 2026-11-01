@@ -12,6 +12,7 @@ export type Task = {
 };
 
 export type Session = {
+  id?: string;
   at: number; // tugagan vaqt (ms)
   minutes: number;
   taskId?: string;
