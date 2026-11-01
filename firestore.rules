@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Har bir foydalanuvchi faqat o'zining ma'lumotini ko'radi va yozadi
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      match /tasks/{taskId} {
+        allow read, delete: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 300
+          && request.resource.data.estimate is int
+          && request.resource.data.done is int;
+      }
+
+      match /sessions/{sessionId} {
+        allow read, delete: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.minutes is int
+          && request.resource.data.minutes > 0
+          && request.resource.data.minutes <= 600;
+      }
+    }
+  }
+}

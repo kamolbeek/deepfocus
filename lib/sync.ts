@@ -1,58 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import {
+  GoogleAuthProvider,
+  isSignInWithEmailLink,
+  onAuthStateChanged,
+  sendSignInLinkToEmail,
+  signInWithEmailLink,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut as fbSignOut,
+  type User,
+} from "firebase/auth";
+import { collection, doc, getDoc, getDocs, writeBatch, type Firestore } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 import type { Session, Settings, Task } from "@/lib/store";
 
 export type SyncStatus = "off" | "signed-out" | "syncing" | "synced" | "error";
-
-type TaskRow = {
-  id: string;
-  title: string;
-  estimate: number;
-  done: number;
-  completed: boolean;
-  created_at: string;
-};
-type SessionRow = { id: string; ended_at: string; minutes: number; task_id: string | null };
+export type CloudUser = { uid: string; email: string | null; name: string | null };
 
 // Oxirgi muvaffaqiyatli sinxron holati: nima o'zgarganini shundan bilamiz
 type Snapshot = { userId: string; tasks: Record<string, string>; sessions: string[]; settings: string };
 const SNAP_KEY = "df.synced";
+const EMAIL_KEY = "df.signinEmail";
 
 export const sessionId = (s: Session) => s.id ?? `s${s.at}`;
 const taskJson = (t: Task) => JSON.stringify([t.title, t.estimate, t.done, t.completed]);
-
-const toTaskRow = (t: Task) => ({
-  id: t.id,
-  title: t.title.slice(0, 300),
-  estimate: Math.min(99, Math.max(1, t.estimate)),
-  done: t.done,
-  completed: t.completed,
-  created_at: new Date(t.createdAt).toISOString(),
-  updated_at: new Date().toISOString(),
-});
-const fromTaskRow = (r: TaskRow): Task => ({
-  id: r.id,
-  title: r.title,
-  estimate: r.estimate,
-  done: r.done,
-  completed: r.completed,
-  createdAt: new Date(r.created_at).getTime(),
-});
-const toSessionRow = (s: Session) => ({
-  id: sessionId(s),
-  ended_at: new Date(s.at).toISOString(),
-  minutes: s.minutes,
-  task_id: s.taskId ?? null,
-});
-const fromSessionRow = (r: SessionRow): Session => ({
-  id: r.id,
-  at: new Date(r.ended_at).getTime(),
-  minutes: r.minutes,
-  taskId: r.task_id ?? undefined,
-});
 
 function loadSnap(): Snapshot | null {
   try {
@@ -77,6 +50,63 @@ const snapOf = (userId: string, tasks: Task[], sessions: Session[], settings: Se
   settings: JSON.stringify(settings),
 });
 
+// ---- Firestore: users/{uid}, users/{uid}/tasks/{id}, users/{uid}/sessions/{id}
+
+async function fetchAll(fs: Firestore, uid: string) {
+  const [ts, ss, us] = await Promise.all([
+    getDocs(collection(fs, "users", uid, "tasks")),
+    getDocs(collection(fs, "users", uid, "sessions")),
+    getDoc(doc(fs, "users", uid)),
+  ]);
+  const tasks: Task[] = ts.docs.map((d) => {
+    const v = d.data();
+    return {
+      id: d.id,
+      title: String(v.title ?? ""),
+      estimate: Number(v.estimate ?? 1),
+      done: Number(v.done ?? 0),
+      completed: !!v.completed,
+      createdAt: Number(v.createdAt ?? Date.now()),
+    };
+  });
+  const sessions: Session[] = ss.docs.map((d) => {
+    const v = d.data();
+    return { id: d.id, at: Number(v.at), minutes: Number(v.minutes), taskId: v.taskId ?? undefined };
+  });
+  const settings = (us.exists() ? (us.data().settings ?? null) : null) as Settings | null;
+  return { tasks, sessions, settings };
+}
+
+type Ops = { upTasks: Task[]; delTasks: string[]; upSess: Session[]; settings?: Settings };
+
+async function push(fs: Firestore, uid: string, ops: Ops) {
+  const writes: ((b: ReturnType<typeof writeBatch>) => void)[] = [];
+  const now = Date.now();
+  for (const t of ops.upTasks)
+    writes.push((b) =>
+      b.set(doc(fs, "users", uid, "tasks", t.id), {
+        title: t.title.slice(0, 300),
+        estimate: t.estimate,
+        done: t.done,
+        completed: t.completed,
+        createdAt: t.createdAt,
+        updatedAt: now,
+      }),
+    );
+  for (const id of ops.delTasks) writes.push((b) => b.delete(doc(fs, "users", uid, "tasks", id)));
+  for (const s of ops.upSess)
+    writes.push((b) =>
+      b.set(doc(fs, "users", uid, "sessions", sessionId(s)), { at: s.at, minutes: s.minutes, taskId: s.taskId ?? null }),
+    );
+  if (ops.settings) writes.push((b) => b.set(doc(fs, "users", uid), { settings: ops.settings, updatedAt: now }, { merge: true }));
+  // Firestore bitta paketda 500 tagacha yozuv qabul qiladi
+  for (let i = 0; i < writes.length; i += 450) {
+    const b = writeBatch(fs);
+    writes.slice(i, i + 450).forEach((w) => w(b));
+    await b.commit();
+  }
+}
+
 type Args = {
   ready: boolean;
   tasks: Task[];
@@ -88,8 +118,8 @@ type Args = {
 };
 
 export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, settings, setSettings }: Args) {
-  const [user, setUser] = useState<User | null>(null);
-  const [status, setStatus] = useState<SyncStatus>(supabase ? "signed-out" : "off");
+  const [user, setUser] = useState<CloudUser | null>(null);
+  const [status, setStatus] = useState<SyncStatus>(auth ? "signed-out" : "off");
   const snap = useRef<Snapshot | null>(null);
   const latest = useRef({ tasks, sessions, settings });
   useEffect(() => {
@@ -97,33 +127,36 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
   }, [tasks, sessions, settings]);
   const busy = useRef(false);
 
-  // Kirish holatini kuzatish
+  // Kirish holatini kuzatish va emaildagi havola bilan qaytganda kirishni yakunlash
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null));
-    return () => data.subscription.unsubscribe();
+    if (!auth) return;
+    const a = auth;
+    if (isSignInWithEmailLink(a, window.location.href)) {
+      const email = localStorage.getItem(EMAIL_KEY) ?? window.prompt("Kirish uchun emailingizni yozing") ?? "";
+      if (email)
+        signInWithEmailLink(a, email, window.location.href)
+          .then(() => localStorage.removeItem(EMAIL_KEY))
+          .catch((e) => console.error("[DeepFokus] email havola xatosi", e))
+          .finally(() => window.history.replaceState(null, "", window.location.pathname));
+    }
+    return onAuthStateChanged(a, (u: User | null) =>
+      setUser(u ? { uid: u.uid, email: u.email, name: u.displayName } : null),
+    );
   }, []);
 
   // Bulutdagini olib, shu qurilmadagi bilan birlashtirish
   const pull = useCallback(async () => {
-    if (!supabase || !user || busy.current) return;
+    if (!db || !user || busy.current) return;
     busy.current = true;
     setStatus("syncing");
     try {
-      const [tr, sr, pr] = await Promise.all([
-        supabase.from("tasks").select("id,title,estimate,done,completed,created_at"),
-        supabase.from("sessions").select("id,ended_at,minutes,task_id"),
-        supabase.from("profiles").select("settings").eq("id", user.id).maybeSingle(),
-      ]);
-      if (tr.error || sr.error || pr.error) throw tr.error ?? sr.error ?? pr.error;
-
+      const remoteAll = await fetchAll(db, user.uid);
       const prev = loadSnap();
-      const same = prev?.userId === user.id ? prev : null;
+      const same = prev?.userId === user.uid ? prev : null;
       const local = latest.current;
 
       // Vazifalar: shu qurilmada o'zgargan bo'lsa shu qurilmaniki, aks holda bulutdagi
-      const remote = new Map((tr.data as TaskRow[]).map((r) => [r.id, fromTaskRow(r)]));
+      const remote = new Map(remoteAll.tasks.map((t) => [t.id, t]));
       const merged = new Map(remote);
       const localIds = new Set(local.tasks.map((t) => t.id));
       for (const t of local.tasks) {
@@ -139,33 +172,27 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
       for (const id of remote.keys()) if (same && same.tasks[id] !== undefined && !localIds.has(id)) merged.delete(id);
 
       // Sessiyalar faqat qo'shiladi: ikkalasini birlashtiramiz
-      const sess = new Map((sr.data as SessionRow[]).map((r) => [r.id, fromSessionRow(r)]));
+      const sess = new Map(remoteAll.sessions.map((s) => [sessionId(s), s]));
       const remoteSessIds = new Set(sess.keys());
       for (const s of local.sessions) if (!sess.has(sessionId(s))) sess.set(sessionId(s), { ...s, id: sessionId(s) });
 
       const nextTasks = [...merged.values()].sort((a, b) => a.createdAt - b.createdAt);
       const nextSessions = [...sess.values()].sort((a, b) => a.at - b.at);
-      const remoteSettings = (pr.data?.settings ?? null) as Settings | null;
-      const nextSettings = remoteSettings && same?.settings === JSON.stringify(local.settings) ? { ...local.settings, ...remoteSettings } : local.settings;
+      const rs = remoteAll.settings;
+      const localUnchanged = same?.settings === JSON.stringify(local.settings);
+      const nextSettings = rs && (localUnchanged || !same) ? { ...local.settings, ...rs } : local.settings;
 
-      // Bulutni ham shu holatga keltiramiz
-      const upTasks = nextTasks.filter((t) => {
-        const r = remote.get(t.id);
-        return !r || taskJson(r) !== taskJson(t);
+      await push(db, user.uid, {
+        upTasks: nextTasks.filter((t) => {
+          const r = remote.get(t.id);
+          return !r || taskJson(r) !== taskJson(t);
+        }),
+        delTasks: [...remote.keys()].filter((id) => !merged.has(id)),
+        upSess: nextSessions.filter((s) => !remoteSessIds.has(sessionId(s))),
+        settings: JSON.stringify(rs) !== JSON.stringify(nextSettings) ? nextSettings : undefined,
       });
-      const delTasks = [...remote.keys()].filter((id) => !merged.has(id));
-      const upSess = nextSessions.filter((s) => !remoteSessIds.has(sessionId(s)));
-      const ops = [];
-      if (upTasks.length) ops.push(supabase.from("tasks").upsert(upTasks.map(toTaskRow)));
-      if (delTasks.length) ops.push(supabase.from("tasks").delete().in("id", delTasks));
-      if (upSess.length) ops.push(supabase.from("sessions").upsert(upSess.map(toSessionRow)));
-      if (JSON.stringify(remoteSettings) !== JSON.stringify(nextSettings))
-        ops.push(supabase.from("profiles").upsert({ id: user.id, settings: nextSettings, updated_at: new Date().toISOString() }));
-      const res = await Promise.all(ops);
-      const err = res.find((r) => r.error)?.error;
-      if (err) throw err;
 
-      snap.current = snapOf(user.id, nextTasks, nextSessions, nextSettings);
+      snap.current = snapOf(user.uid, nextTasks, nextSessions, nextSettings);
       saveSnap(snap.current);
       setTasks(nextTasks);
       setSessions(nextSessions);
@@ -181,7 +208,7 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
 
   // Kirgandan keyin va ilovaga qaytganda bulutdan yangilash
   useEffect(() => {
-    if (!supabase) return;
+    if (!auth) return;
     if (!user) {
       snap.current = null;
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -201,7 +228,7 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
 
   // Har o'zgarishdan keyin faqat farqni yuborish
   useEffect(() => {
-    if (!supabase || !user || !snap.current || busy.current) return;
+    if (!db || !user || !snap.current || busy.current) return;
     const s = snap.current;
     const upTasks = tasks.filter((t) => s.tasks[t.id] !== taskJson(t));
     const ids = new Set(tasks.map((t) => t.id));
@@ -211,46 +238,54 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
     const setChanged = s.settings !== JSON.stringify(settings);
     if (!upTasks.length && !delTasks.length && !upSess.length && !setChanged) return;
 
+    const fs = db;
     const timer = setTimeout(async () => {
-      const sb = supabase!;
       setStatus("syncing");
-      const ops = [];
-      if (upTasks.length) ops.push(sb.from("tasks").upsert(upTasks.map(toTaskRow)));
-      if (delTasks.length) ops.push(sb.from("tasks").delete().in("id", delTasks));
-      if (upSess.length) ops.push(sb.from("sessions").upsert(upSess.map(toSessionRow)));
-      if (setChanged) ops.push(sb.from("profiles").upsert({ id: user.id, settings, updated_at: new Date().toISOString() }));
-      const res = await Promise.all(ops);
-      const err = res.find((r) => r.error)?.error;
-      if (err) {
-        console.error("[DeepFokus] yuborishda xato", err);
+      try {
+        await push(fs, user.uid, { upTasks, delTasks, upSess, settings: setChanged ? settings : undefined });
+        snap.current = snapOf(user.uid, tasks, sessions, settings);
+        saveSnap(snap.current);
+        setStatus("synced");
+      } catch (e) {
+        console.error("[DeepFokus] yuborishda xato", e);
         setStatus("error");
-        return;
       }
-      snap.current = snapOf(user.id, tasks, sessions, settings);
-      saveSnap(snap.current);
-      setStatus("synced");
     }, 800);
     return () => clearTimeout(timer);
   }, [user, tasks, sessions, settings]);
 
-  const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
   const signInGoogle = useCallback(async () => {
-    if (!supabase) return { error: "off" };
-    const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
-    return { error: error?.message };
-  }, [redirectTo]);
-  const signInEmail = useCallback(
-    async (email: string) => {
-      if (!supabase) return { error: "off" };
-      const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
-      return { error: error?.message };
-    },
-    [redirectTo],
-  );
+    if (!auth) return { error: "off" };
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+      return {};
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? "";
+      if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
+        await signInWithRedirect(auth, provider);
+        return {};
+      }
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return {};
+      return { error: code || "error" };
+    }
+  }, []);
+
+  const signInEmail = useCallback(async (email: string) => {
+    if (!auth) return { error: "off" };
+    try {
+      await sendSignInLinkToEmail(auth, email, { url: window.location.origin, handleCodeInApp: true });
+      localStorage.setItem(EMAIL_KEY, email);
+      return {};
+    } catch (e) {
+      return { error: (e as { code?: string }).code ?? "error" };
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
-    await supabase?.auth.signOut();
+    if (auth) await fbSignOut(auth);
     saveSnap(null);
   }, []);
 
-  return { enabled: !!supabase, user, status, signInGoogle, signInEmail, signOut, refresh: pull };
+  return { enabled: !!auth, user, status, signInGoogle, signInEmail, signOut, refresh: pull };
 }

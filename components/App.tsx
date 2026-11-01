@@ -31,8 +31,7 @@ import {
   MailIcon,
   GoogleIcon,
 } from "@/components/Icons";
-import { useCloudSync, type SyncStatus } from "@/lib/sync";
-import type { User } from "@supabase/supabase-js";
+import { useCloudSync, type CloudUser, type SyncStatus } from "@/lib/sync";
 
 type Mode = "focus" | "short" | "long";
 type Tab = "timer" | "tasks" | "stats" | "me";
@@ -524,7 +523,7 @@ function AccountView({
 }: {
   cloud: {
     enabled: boolean;
-    user: User | null;
+    user: CloudUser | null;
     status: SyncStatus;
     signInGoogle: () => Promise<{ error?: string }>;
     signInEmail: (email: string) => Promise<{ error?: string }>;
@@ -578,7 +577,7 @@ function AccountView({
               {(cloud.user.email ?? "?").slice(0, 1).toUpperCase()}
             </span>
             <div className="min-w-0">
-              <p className="truncate text-[17px] font-semibold">{cloud.user.user_metadata?.full_name ?? cloud.user.email}</p>
+              <p className="truncate text-[17px] font-semibold">{cloud.user.name ?? cloud.user.email}</p>
               <p className="truncate text-[13px] text-[#6E6E73]">{cloud.user.email}</p>
             </div>
           </div>
