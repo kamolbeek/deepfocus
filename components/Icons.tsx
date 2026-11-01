@@ -105,3 +105,9 @@ export const GoogleIcon = ({ className }: P) => (
     <path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7l3.7 2.9C6.7 7.3 9.1 5.4 12 5.4Z" />
   </svg>
 );
+export const SendIcon = ({ className }: P) => (
+  <svg {...base} className={className}>
+    <path d="M21 3 10.5 13.5" />
+    <path d="M21 3 14.5 21l-4-7.5L3 9.5 21 3Z" />
+  </svg>
+);

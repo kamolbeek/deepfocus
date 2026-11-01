@@ -3,6 +3,15 @@ rules_version = '2';
 // Har bir foydalanuvchi faqat o'zining ma'lumotini ko'radi va yozadi
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Telegram'ni ulash uchun bir martalik kod: faqat o'zi uchun yarata oladi, o'qiy olmaydi.
+    // Kodni server (bot) xizmat hisobi bilan o'qiydi va o'chiradi.
+    match /linkCodes/{code} {
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.exp is int
+        && request.resource.data.keys().hasOnly(['uid', 'exp']);
+    }
+
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
 

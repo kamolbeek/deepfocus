@@ -14,7 +14,7 @@ import {
   signOut as fbSignOut,
   type User,
 } from "firebase/auth";
-import { collection, doc, getDoc, getDocs, writeBatch, type Firestore } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc, writeBatch, type Firestore } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { Session, Settings, Task } from "@/lib/store";
 import { telegram } from "@/lib/telegram";
@@ -76,8 +76,10 @@ async function fetchAll(fs: Firestore, uid: string) {
     const v = d.data();
     return { id: d.id, at: Number(v.at), minutes: Number(v.minutes), taskId: v.taskId ?? undefined };
   });
-  const settings = (us.exists() ? (us.data().settings ?? null) : null) as Settings | null;
-  return { tasks, sessions, settings };
+  const ud = us.exists() ? us.data() : {};
+  const settings = (ud.settings ?? null) as Settings | null;
+  const telegram = ud.telegramId ? { id: Number(ud.telegramId), username: (ud.telegramUsername ?? null) as string | null } : null;
+  return { tasks, sessions, settings, telegram };
 }
 
 type Ops = { upTasks: Task[]; delTasks: string[]; upSess: Session[]; settings?: Settings };
@@ -123,6 +125,7 @@ type Args = {
 export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, settings, setSettings }: Args) {
   const [user, setUser] = useState<CloudUser | null>(null);
   const [status, setStatus] = useState<SyncStatus>(auth ? "signed-out" : "off");
+  const [telegramLink, setTelegramLink] = useState<{ id: number; username: string | null } | null>(null);
   const snap = useRef<Snapshot | null>(null);
   const latest = useRef({ tasks, sessions, settings });
   useEffect(() => {
@@ -142,30 +145,35 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
           .catch((e) => console.error("[DeepFokus] email havola xatosi", e))
           .finally(() => window.history.replaceState(null, "", window.location.pathname));
     }
-    let tgTried = false;
-    return onAuthStateChanged(a, (u: User | null) => {
-      setUser(u ? { uid: u.uid, email: u.email, name: u.displayName } : null);
-      // Telegram ichida bo'lsa, Telegram hisobi bilan avtomatik kirish
-      const w = telegram();
-      if (!u && w && !tgTried) {
-        tgTried = true;
-        fetch("/api/telegram/auth", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ initData: w.initData }),
-        })
-          .then((r) => (r.ok ? r.json() : null))
-          .then(async (d: { token?: string; name?: string } | null) => {
-            if (!d?.token) return;
-            const cred = await signInWithCustomToken(a, d.token);
-            if (d.name && cred.user.displayName !== d.name) {
-              await updateProfile(cred.user, { displayName: d.name });
-              setUser({ uid: cred.user.uid, email: cred.user.email, name: d.name });
-            }
-          })
-          .catch((e) => console.error("[DeepFokus] Telegram orqali kirish xatosi", e));
-      }
-    });
+    const unsub = onAuthStateChanged(a, (u: User | null) =>
+      setUser(u ? { uid: u.uid, email: u.email, name: u.displayName } : null),
+    );
+    // Telegram ichida: har ochilishda server qaysi hisobga kirishni aytadi
+    // (hisob saytdagi Google hisobiga ulangan bo'lsa, o'sha hisob)
+    const w = telegram();
+    if (w) {
+      (async () => {
+        try {
+          await a.authStateReady();
+          const r = await fetch("/api/telegram/auth", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ initData: w.initData }),
+          });
+          if (!r.ok) return;
+          const d = (await r.json()) as { token?: string; name?: string; uid?: string; linked?: boolean };
+          if (!d.token || a.currentUser?.uid === d.uid) return;
+          const cred = await signInWithCustomToken(a, d.token);
+          if (!d.linked && d.name && cred.user.displayName !== d.name) {
+            await updateProfile(cred.user, { displayName: d.name });
+            setUser({ uid: cred.user.uid, email: cred.user.email, name: d.name });
+          }
+        } catch (e) {
+          console.error("[DeepFokus] Telegram orqali kirish xatosi", e);
+        }
+      })();
+    }
+    return unsub;
   }, []);
 
   // Bulutdagini olib, shu qurilmadagi bilan birlashtirish
@@ -175,6 +183,7 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
     setStatus("syncing");
     try {
       const remoteAll = await fetchAll(db, user.uid);
+      setTelegramLink(remoteAll.telegram);
       const prev = loadSnap();
       const same = prev?.userId === user.uid ? prev : null;
       const local = latest.current;
@@ -311,11 +320,39 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
     saveSnap(null);
   }, []);
 
+  // Saytdan Telegram'ni ulash: bir martalik kod yaratib, botni ochamiz
+  const linkTelegram = useCallback(async () => {
+    if (!db || !user) return { error: "signed-out" };
+    const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT;
+    if (!bot) return { error: "no-bot" };
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    const abc = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    const code = Array.from(bytes, (b) => abc[b % abc.length]).join("");
+    try {
+      await setDoc(doc(db, "linkCodes", code), { uid: user.uid, exp: Date.now() + 10 * 60_000 });
+      window.open(`https://t.me/${bot}?start=link_${code}`, "_blank", "noopener");
+      return {};
+    } catch (e) {
+      return { error: (e as { code?: string }).code ?? "error" };
+    }
+  }, [user]);
+
   const [inTelegram, setInTelegram] = useState(false);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setInTelegram(!!telegram());
   }, []);
 
-  return { enabled: !!auth, inTelegram, user, status, signInGoogle, signInEmail, signOut, refresh: pull };
+  return {
+    enabled: !!auth,
+    inTelegram,
+    user,
+    status,
+    telegramLink,
+    signInGoogle,
+    signInEmail,
+    signOut,
+    linkTelegram,
+    refresh: pull,
+  };
 }

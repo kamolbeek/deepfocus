@@ -32,6 +32,7 @@ import {
   CloudIcon,
   MailIcon,
   GoogleIcon,
+  SendIcon,
 } from "@/components/Icons";
 import { useCloudSync, type CloudUser, type SyncStatus } from "@/lib/sync";
 import { haptic, initTelegram } from "@/lib/telegram";
@@ -764,6 +765,8 @@ function AccountView({
     enabled: boolean;
     inTelegram: boolean;
     user: CloudUser | null;
+    telegramLink: { id: number; username: string | null } | null;
+    linkTelegram: () => Promise<{ error?: string }>;
     status: SyncStatus;
     signInGoogle: () => Promise<{ error?: string }>;
     signInEmail: (email: string) => Promise<{ error?: string }>;
@@ -844,6 +847,30 @@ function AccountView({
               {STATUS_TEXT[cloud.status]}
             </span>
           </button>
+          {!cloud.inTelegram &&
+            (cloud.telegramLink ? (
+              <div className="flex items-center gap-2.5 rounded-2xl bg-[#F5F5F7] px-3.5 py-3">
+                <SendIcon className="h-5 w-5 shrink-0 text-[#229ED9]" />
+                <span className="text-[15px] font-medium">
+                  Telegram ulangan{cloud.telegramLink.username ? `: @${cloud.telegramLink.username}` : ""}
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  const r = await cloud.linkTelegram();
+                  if (r.error) alert("Telegram'ni ulab bo'lmadi. Bir ozdan keyin qayta urinib ko'ring.");
+                }}
+                className="flex items-center gap-2.5 rounded-2xl bg-[#229ED9]/10 px-3.5 py-3 text-left"
+              >
+                <SendIcon className="h-5 w-5 shrink-0 text-[#229ED9]" />
+                <span className="flex flex-col">
+                  <span className="text-[15px] font-semibold text-[#136C99]">Telegram&apos;ni ulash</span>
+                  <span className="text-[13px] text-[#6E6E73]">Botda ham shu vazifa va sprintlar chiqadi</span>
+                </span>
+              </button>
+            ))}
           <button
             type="button"
             onClick={() => cloud.signOut()}
