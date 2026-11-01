@@ -25,9 +25,28 @@ export type Settings = {
   longEvery: number;
   dailyGoal: number;
   sound: boolean;
+  accent: AccentId;
 };
 
-export const DEFAULT_SETTINGS: Settings = { focus: 25, short: 5, long: 15, longEvery: 4, dailyGoal: 4, sound: true };
+export type AccentId = "violet" | "blue" | "green" | "pink" | "orange";
+// Oq matn bilan kontrast 4.5:1 dan yuqori bo'lgan yumshoq ranglar
+export const ACCENTS: Record<AccentId, { name: string; main: string; soft: string }> = {
+  violet: { name: "Binafsha", main: "#5E5CE6", soft: "#EEEEFD" },
+  blue: { name: "Ko'k", main: "#2B68D0", soft: "#E8F0FC" },
+  green: { name: "Yashil", main: "#1E7F55", soft: "#E3F3EB" },
+  pink: { name: "Pushti", main: "#C0447A", soft: "#FAE8F0" },
+  orange: { name: "Shaftoli", main: "#B5531A", soft: "#FBEDE3" },
+};
+
+export const DEFAULT_SETTINGS: Settings = {
+  focus: 25,
+  short: 5,
+  long: 15,
+  longEvery: 4,
+  dailyGoal: 4,
+  sound: true,
+  accent: "violet",
+};
 
 function read<T>(key: string, fallback: T): T {
   try {

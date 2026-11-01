@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Companion from "@/components/Companion";
 import type { Mood } from "@/lib/companion-engine";
 import {
+  ACCENTS,
   DEFAULT_SETTINGS,
+  type AccentId,
   lastNDays,
   streakOf,
   todaySessions,
@@ -79,7 +81,10 @@ const fmt = (ms: number) => {
 };
 
 export default function App() {
-  const [settings, setSettings, settingsReady] = usePersisted<Settings>("df.settings", DEFAULT_SETTINGS);
+  const [rawSettings, setSettings, settingsReady] = usePersisted<Settings>("df.settings", DEFAULT_SETTINGS);
+  // Eski saqlangan sozlamalarda yangi maydonlar bo'lmasligi mumkin
+  const settings = useMemo(() => ({ ...DEFAULT_SETTINGS, ...rawSettings }), [rawSettings]);
+  const accent = ACCENTS[settings.accent] ?? ACCENTS.violet;
   const [tasks, setTasks, tasksReady] = usePersisted<Task[]>("df.tasks", []);
   const [sessions, setSessions, sessionsReady] = usePersisted<Session[]>("df.sessions", []);
   const cloud = useCloudSync({
@@ -197,7 +202,10 @@ export default function App() {
   const startLabel = running ? "Pauza" : remaining < total && remaining > 0 ? "Davom ettirish" : "Boshlash";
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-[#F5F5F7] text-[#1D1D1F]">
+    <div
+      className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-[#F5F5F7] text-[#1D1D1F]"
+      style={{ "--accent": accent.main, "--accent-soft": accent.soft } as React.CSSProperties}
+    >
       <main className="flex flex-1 flex-col gap-3.5 px-5 pb-28 pt-10">
         {tab === "timer" && (
           <>
@@ -217,8 +225,8 @@ export default function App() {
               onClick={() => setTab("tasks")}
               className="flex min-h-11 items-center gap-3 rounded-2xl bg-white px-4 py-3 text-left shadow-[0_1px_2px_rgba(0,0,0,.05)]"
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[#5E5CE6]/12">
-                <TargetIcon className="h-[18px] w-[18px] text-[#5E5CE6]" />
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-(--accent)/12">
+                <TargetIcon className="h-[18px] w-[18px] text-(--accent)" />
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-base font-semibold">{activeTask ? activeTask.title : "Nimaga fokus qilamiz?"}</span>
@@ -253,7 +261,7 @@ export default function App() {
                   cy="128"
                   r="114"
                   fill="none"
-                  stroke={mode === "focus" ? "#5E5CE6" : "#30B07A"}
+                  stroke={mode === "focus" ? "var(--accent)" : "#30B07A"}
                   strokeWidth="10"
                   strokeLinecap="round"
                   strokeDasharray={RING}
@@ -271,7 +279,7 @@ export default function App() {
             <div className="flex items-end gap-2">
               <Companion mood={mood} onPoke={onPoke} className="h-[118px] w-[104px] shrink-0" heightFrac={0.86} />
               <div className="mb-6 flex-1 rounded-2xl rounded-bl-[4px] bg-white px-3.5 py-2.5 text-[14px] leading-snug shadow-[0_1px_2px_rgba(0,0,0,.05)]">
-                {BUBBLES[mood]}
+                {mood === "wait" ? `Seni kutyapman. ${settings.focus} daqiqa, keyin choy?` : BUBBLES[mood]}
               </div>
             </div>
 
@@ -282,8 +290,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={toggle}
-                className={`h-[60px] min-w-[176px] rounded-full px-7 text-[17px] font-semibold text-white shadow-[0_6px_16px_rgba(94,92,230,.25)] transition active:scale-[.97] ${
-                  running ? "bg-[#1D1D1F]" : "bg-[#5E5CE6]"
+                className={`h-[60px] min-w-[176px] rounded-full px-7 text-[17px] font-semibold text-white shadow-[0_6px_16px_color-mix(in_srgb,var(--accent)_25%,transparent)] transition active:scale-[.97] ${
+                  running ? "bg-[#1D1D1F]" : "bg-(--accent)"
                 }`}
               >
                 {startLabel}
@@ -300,7 +308,7 @@ export default function App() {
 
             <div className="flex items-center justify-center gap-1.5" aria-label={`Bugun ${today.length} / ${settings.dailyGoal} sessiya`}>
               {Array.from({ length: Math.max(settings.dailyGoal, today.length) }).map((_, i) => (
-                <span key={i} className={`h-2 w-2 rounded-full ${i < today.length ? "bg-[#5E5CE6]" : "bg-[#D1D1D6]"}`} />
+                <span key={i} className={`h-2 w-2 rounded-full ${i < today.length ? "bg-(--accent)" : "bg-[#D1D1D6]"}`} />
               ))}
               <span className="ml-1.5 text-[13px] font-medium text-[#6E6E73]">
                 {today.length} / {settings.dailyGoal} bugun
@@ -323,7 +331,12 @@ export default function App() {
 
         {tab === "stats" && <StatsView sessions={sessions} streak={streak} />}
 
-        {tab === "me" && <AccountView cloud={cloud} sessions={sessions} tasks={tasks} />}
+        {tab === "me" && (
+          <>
+            <AccountView cloud={cloud} sessions={sessions} tasks={tasks} />
+            <SettingsView settings={settings} setSettings={setSettings} />
+          </>
+        )}
       </main>
 
       <nav
@@ -343,7 +356,7 @@ export default function App() {
             type="button"
             aria-current={tab === id ? "page" : undefined}
             onClick={() => setTab(id)}
-            className={`flex min-h-12 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${tab === id ? "text-[#5E5CE6]" : "text-[#6E6E73]"}`}
+            className={`flex min-h-12 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${tab === id ? "text-(--accent)" : "text-[#6E6E73]"}`}
           >
             <Icon className="h-6 w-6" />
             {label}
@@ -383,7 +396,7 @@ function TasksView({
         type="button"
         aria-label={t.completed ? `${t.title} — qayta ochish` : `${t.title} — bajarildi deb belgilash`}
         onClick={() => setTasks((ts) => ts.map((x) => (x.id === t.id ? { ...x, completed: !x.completed } : x)))}
-        className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border-2 ${t.completed ? "border-[#5E5CE6] bg-[#5E5CE6]" : "border-[#C7C7CC]"}`}
+        className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border-2 ${t.completed ? "border-(--accent) bg-(--accent)" : "border-[#C7C7CC]"}`}
       >
         {t.completed && <CheckIcon className="h-3.5 w-3.5 text-white" />}
       </button>
@@ -394,7 +407,7 @@ function TasksView({
         </span>
       </span>
       {!t.completed && (
-        <button type="button" onClick={() => onFocus(t.id)} className="min-h-9 rounded-full bg-[#5E5CE6]/12 px-3 text-[13px] font-semibold text-[#5E5CE6]">
+        <button type="button" onClick={() => onFocus(t.id)} className="min-h-9 rounded-full bg-(--accent)/12 px-3 text-[13px] font-semibold text-(--accent)">
           Fokus
         </button>
       )}
@@ -425,7 +438,7 @@ function TasksView({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Masalan: matematikadan 20 ta masala"
-          className="min-h-11 rounded-xl bg-[#F5F5F7] px-3.5 text-base outline-none placeholder:text-[#8E8E93] focus:ring-2 focus:ring-[#5E5CE6]/40"
+          className="min-h-11 rounded-xl bg-[#F5F5F7] px-3.5 text-base outline-none placeholder:text-[#8E8E93] focus:ring-2 focus:ring-(--accent)/40"
         />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -438,7 +451,7 @@ function TasksView({
               +
             </button>
           </div>
-          <button type="submit" className="flex min-h-10 items-center gap-1.5 rounded-full bg-[#5E5CE6] px-4 text-[15px] font-semibold text-white">
+          <button type="submit" className="flex min-h-10 items-center gap-1.5 rounded-full bg-(--accent) px-4 text-[15px] font-semibold text-white">
             <PlusIcon className="h-4 w-4" /> Qo&apos;shish
           </button>
         </div>
@@ -483,7 +496,7 @@ function StatsView({ sessions, streak }: { sessions: Session[]; streak: number }
           {days.map((d) => (
             <div key={d.key} className="flex h-full flex-col items-center justify-end gap-1.5">
               <div
-                className={`w-full max-w-[30px] rounded-lg ${d.isToday ? "bg-[#5E5CE6]" : "bg-[#D1D1D6]"}`}
+                className={`w-full max-w-[30px] rounded-lg ${d.isToday ? "bg-(--accent)" : "bg-[#D1D1D6]"}`}
                 style={{ height: d.minutes ? Math.max(8, Math.round((d.minutes / max) * 120)) : 4 }}
                 title={`${d.minutes} daqiqa`}
               />
@@ -573,7 +586,7 @@ function AccountView({
       {cloud.enabled && cloud.user && (
         <section className="flex flex-col gap-4 rounded-[20px] bg-white p-[18px]">
           <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#EEEEFD] text-[19px] font-bold text-[#5E5CE6]">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-(--accent-soft) text-[19px] font-bold text-(--accent)">
               {(cloud.user.email ?? "?").slice(0, 1).toUpperCase()}
             </span>
             <div className="min-w-0">
@@ -586,7 +599,7 @@ function AccountView({
             onClick={() => cloud.refresh()}
             className="flex items-center gap-2.5 rounded-2xl bg-[#F5F5F7] px-3.5 py-3 text-left"
           >
-            <CloudIcon className={`h-5 w-5 shrink-0 ${cloud.status === "error" ? "text-[#FF3B30]" : "text-[#5E5CE6]"}`} />
+            <CloudIcon className={`h-5 w-5 shrink-0 ${cloud.status === "error" ? "text-[#FF3B30]" : "text-(--accent)"}`} />
             <span className="text-[15px] font-medium" aria-live="polite">
               {STATUS_TEXT[cloud.status]}
             </span>
@@ -626,8 +639,8 @@ function AccountView({
             <span className="h-px flex-1 bg-[#E5E5EA]" />
           </div>
           {sent ? (
-            <div className="flex items-start gap-2.5 rounded-2xl bg-[#EEEEFD] p-3.5" role="status">
-              <MailIcon className="mt-0.5 h-5 w-5 shrink-0 text-[#5E5CE6]" />
+            <div className="flex items-start gap-2.5 rounded-2xl bg-(--accent-soft) p-3.5" role="status">
+              <MailIcon className="mt-0.5 h-5 w-5 shrink-0 text-(--accent)" />
               <p className="text-[15px] leading-snug">
                 <b>{email}</b> manziliga havola yubordik. Pochtangizni ochib, havolani bosing.
               </p>
@@ -661,12 +674,12 @@ function AccountView({
                 placeholder="email@manzil.uz"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="h-12 rounded-2xl bg-[#F5F5F7] px-4 text-[17px] outline-none focus:ring-2 focus:ring-[#5E5CE6]"
+                className="h-12 rounded-2xl bg-[#F5F5F7] px-4 text-[17px] outline-none focus:ring-2 focus:ring-(--accent)"
               />
               <button
                 type="submit"
                 disabled={busy}
-                className="h-[52px] rounded-2xl bg-[#5E5CE6] text-[17px] font-semibold text-white disabled:opacity-60"
+                className="h-[52px] rounded-2xl bg-(--accent) text-[17px] font-semibold text-white disabled:opacity-60"
               >
                 Email orqali kirish
               </button>
@@ -681,6 +694,107 @@ function AccountView({
       )}
 
       {stats}
+    </>
+  );
+}
+
+function Stepper({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  unit,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  unit: string;
+  onChange: (v: number) => void;
+}) {
+  const btn =
+    "flex h-9 w-9 items-center justify-center rounded-full bg-[#F2F2F7] text-[20px] font-semibold text-[#1D1D1F] disabled:opacity-35";
+  return (
+    <div className="flex min-h-[54px] items-center justify-between gap-3 px-4">
+      <span className="text-[16px]">{label}</span>
+      <div className="flex items-center gap-2.5">
+        <button type="button" aria-label={`${label}: kamaytirish`} disabled={value <= min} onClick={() => onChange(Math.max(min, value - step))} className={btn}>
+          −
+        </button>
+        <span className="min-w-[58px] text-center text-[16px] font-semibold tabular-nums" aria-live="polite">
+          {value} {unit}
+        </span>
+        <button type="button" aria-label={`${label}: oshirish`} disabled={value >= max} onClick={() => onChange(Math.min(max, value + step))} className={btn}>
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsView({ settings, setSettings }: { settings: Settings; setSettings: (f: (s: Settings) => Settings) => void }) {
+  const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setSettings((s) => ({ ...DEFAULT_SETTINGS, ...s, [k]: v }));
+  const divider = <div className="ml-4 h-px bg-[#E5E5EA]" />;
+  return (
+    <>
+      <h2 className="mt-2 px-1 text-[22px] font-bold tracking-[-0.4px]">Sozlamalar</h2>
+
+      <p className="px-4 text-[13px] font-semibold uppercase tracking-[0.4px] text-[#6E6E73]">Taymer</p>
+      <section className="rounded-[20px] bg-white">
+        <Stepper label="Fokus" value={settings.focus} min={5} max={120} step={5} unit="daq" onChange={(v) => set("focus", v)} />
+        {divider}
+        <Stepper label="Qisqa tanaffus" value={settings.short} min={1} max={30} unit="daq" onChange={(v) => set("short", v)} />
+        {divider}
+        <Stepper label="Uzun tanaffus" value={settings.long} min={5} max={60} step={5} unit="daq" onChange={(v) => set("long", v)} />
+        {divider}
+        <Stepper label="Uzun tanaffus har" value={settings.longEvery} min={2} max={8} unit="sprint" onChange={(v) => set("longEvery", v)} />
+        {divider}
+        <Stepper label="Kunlik maqsad" value={settings.dailyGoal} min={1} max={16} unit="sprint" onChange={(v) => set("dailyGoal", v)} />
+      </section>
+
+      <p className="px-4 pt-1 text-[13px] font-semibold uppercase tracking-[0.4px] text-[#6E6E73]">Ko&apos;rinish va ovoz</p>
+      <section className="rounded-[20px] bg-white">
+        <div className="flex flex-col gap-3 px-4 py-3.5">
+          <span className="text-[16px]">Asosiy rang</span>
+          <div className="flex gap-3" role="radiogroup" aria-label="Asosiy rang">
+            {(Object.keys(ACCENTS) as AccentId[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={settings.accent === id}
+                aria-label={ACCENTS[id].name}
+                onClick={() => set("accent", id)}
+                className="flex h-11 w-11 items-center justify-center rounded-full"
+                style={{
+                  background: ACCENTS[id].main,
+                  boxShadow: settings.accent === id ? `0 0 0 3px #fff, 0 0 0 5px ${ACCENTS[id].main}` : undefined,
+                }}
+              >
+                {settings.accent === id && <CheckIcon className="h-5 w-5 text-white" />}
+              </button>
+            ))}
+          </div>
+        </div>
+        {divider}
+        <label className="flex min-h-[54px] cursor-pointer items-center justify-between px-4">
+          <span className="text-[16px]">Sessiya tugaganda ovoz</span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={settings.sound}
+            onChange={(e) => set("sound", e.target.checked)}
+            className="peer sr-only"
+          />
+          <span
+            aria-hidden
+            className="relative h-[31px] w-[51px] rounded-full bg-[#E9E9EB] transition-colors peer-checked:bg-[#34C759] peer-focus-visible:ring-2 peer-focus-visible:ring-(--accent) after:absolute after:left-[2px] after:top-[2px] after:h-[27px] after:w-[27px] after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5"
+          />
+        </label>
+      </section>
     </>
   );
 }

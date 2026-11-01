@@ -4,6 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "DeepFokus",
   description: "Fokus taymer va kompanyon: vazifalar, streak va o'sib boruvchi do'stingiz bilan chuqur ishlang.",
+  appleWebApp: { capable: true, title: "DeepFokus", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
