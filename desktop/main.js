@@ -20,8 +20,12 @@ const { METHODS, methodById } = require("./shared/methods.js");
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const WEB_URL = "https://deepfocus-gilt.vercel.app";
-const WIN_W = 230;
-const WIN_H = 330;
+// Ish stolidagi kompanyon oynasining asosiy o'lchami (kattalik koeffitsiyenti bilan ko'paytiriladi)
+const PET_W = 230;
+const PET_H = 330;
+// Notch oynasi: ochilgan panel shu o'lchamga sig'adi
+const NOTCH_W = 460;
+const NOTCH_H = 320;
 
 // ---------- Mahalliy fayl: sozlamalar, sessiyalar, oyna joyi
 const storePath = () => path.join(app.getPath("userData"), "deepfokus.json");
@@ -35,6 +39,11 @@ const DEFAULTS = {
   sound: true,
   hidden: false,
   pos: null,
+  mode: "notch", // "notch" — kamera yonida, "desktop" — ish stolida
+  petScale: 1,
+  roam: true, // ish stolida yurib yurish
+  blobShape: "capsule", // notch paneli avatarining shakli
+  blobColor: "#7B5CF0",
   sessions: [],
 };
 let store = { ...DEFAULTS };
@@ -168,6 +177,7 @@ function complete() {
       6000,
     );
     notify("Sprint tugadi 🎉", `Bugun ${today} ta sprint. Endi tanaffus: o'rningizdan turing.`);
+    activity("done", `+${p.focus} daqiqa · bugun ${today} ta sprint`);
     sound("done");
     setMode(T.cycle % p.longEvery === 0 ? "long" : "short");
   } else if (secMode() && T.mode === "short") {
@@ -199,8 +209,10 @@ function toggle() {
     if (T.remaining <= 0) T.remaining = dur(T.mode);
     T.endAt = Date.now() + T.remaining;
     T.running = true;
-    if (T.mode === "focus")
+    if (T.mode === "focus") {
       say(pick(["Boshladik! Men shu yerdaman.", "Telefonni chetga qo'yamiz 🙂", "Bitta ish, to'liq diqqat."]), 4000);
+      activity("start", `${method()?.name ?? "Fokus"} boshlandi · ${fmt(T.remaining)}`);
+    }
     else say("Tanaffus: o'rningdan tur, suv ich.", 4000);
   }
   rebuildMenu();
@@ -254,14 +266,19 @@ function say(text, ms = 4000) {
   push();
 }
 function sound(kind) {
-  if (store.sound) win?.webContents.send("sound", kind);
+  if (store.sound) activeWin()?.webContents.send("sound", kind);
+}
+// Muhim voqealar notch'da "jonli faoliyat" bo'lib qisqa ochiladi
+function activity(kind, text) {
+  notchWin?.webContents.send("activity", { kind, text });
 }
 
-// ---------- Holatni oynaga yuborish
+// ---------- Holatni oynalarga yuborish
 function state() {
   const l = left();
   const total = flowing() ? 60 * 60_000 : dur(T.mode);
   const p = plan();
+  const today = todaySessions();
   return {
     mode: T.mode,
     running: T.running,
@@ -271,51 +288,135 @@ function state() {
     label: flowing() ? (T.running ? "Oqimda" : "Erkin fokus") : labels()[T.mode],
     round: secMode() ? `${Math.min(p.longEvery, (T.cycle % p.longEvery) + (T.mode === "focus" ? 1 : 0)) || p.longEvery} / ${p.longEvery}` : "",
     method: method()?.name ?? "Maxsus",
+    methodId: store.method,
+    methods: METHODS.map((m) => ({ id: m.id, name: m.name, badge: m.badge })),
     canFinish: flowing() && elapsed() >= 60_000,
     started: T.running || (flowing() ? T.flowAcc > 0 : T.remaining < dur(T.mode)),
     celebrate: Date.now() < T.celebrateUntil,
-    goalHit: todaySessions().length === store.dailyGoal,
+    goalHit: today.length === store.dailyGoal,
     away: T.away,
-    today: todaySessions().length,
+    today: today.length,
+    todayMin: today.reduce((a, s) => a + s.minutes, 0),
+    goal: store.dailyGoal,
+    streak: streak(),
     hour: new Date().getHours(),
     lastAt: store.sessions.length ? store.sessions[store.sessions.length - 1].at : 0,
     bubble: Date.now() < bubble.until ? bubble.text : "",
-    look: lookX(),
+    appMode: store.mode,
+    blobShape: store.blobShape,
+    blobColor: store.blobColor,
+    scale: store.petScale,
   };
 }
-// Ko'zlari ekrandagi kursor ortidan qaraydi
-function lookX() {
-  if (!win || win.isDestroyed()) return 0;
-  const [wx] = win.getPosition();
-  const c = screen.getCursorScreenPoint();
-  return Math.max(-1, Math.min(1, (c.x - (wx + WIN_W / 2)) / 500));
-}
+const alive = (w) => w && !w.isDestroyed();
+const activeWin = () => (store.mode === "notch" ? notchWin : pet);
 function push() {
-  win?.webContents.send("state", state());
+  const s = state();
+  if (alive(notchWin)) notchWin.webContents.send("state", s);
+  if (alive(pet)) pet.webContents.send("state", s);
 }
 
-// ---------- Kompanyon oynasi
-let win = null;
+// Kursor holatini tez-tez (30 marta/soniya) yuboramiz: ko'zlar silliq kuzatadi
+function sendCursor() {
+  const c = screen.getCursorScreenPoint();
+  for (const w of [notchWin, pet]) {
+    if (!alive(w) || !w.isVisible()) continue;
+    const [wx, wy] = w.getPosition();
+    w.webContents.send("cursor", { x: c.x - wx, y: c.y - wy });
+  }
+}
+
+const commonPrefs = () => ({
+  preload: path.join(__dirname, "preload.js"),
+  backgroundThrottling: false,
+  contextIsolation: true,
+  sandbox: true,
+});
+function testHooks(w, file) {
+  if (!process.env.DF_SHOT || !file) return;
+  w.webContents.on("console-message", (e) => console.log("[renderer]", e.message));
+  setTimeout(async () => {
+    if (process.env.DF_OPEN) w.webContents.send("test-open");
+    if (process.env.DF_RUN) toggle();
+    await new Promise((r) => setTimeout(r, 1800));
+    const img = await w.webContents.capturePage();
+    fs.writeFileSync(file, img.toPNG());
+    app.quit();
+  }, 3500);
+}
+
+// ---------- Notch oynasi (kamera yonida)
+let notchWin = null;
+function notchGeometry() {
+  const d = screen.getPrimaryDisplay();
+  const menuBar = Math.max(24, d.workArea.y - d.bounds.y);
+  const hasNotch = menuBar >= 30; // notch'li MacBook'larda menyu satri balandroq
+  return { d, menuBar, hasNotch, notchW: hasNotch ? 196 : 0 };
+}
+function createNotchWindow() {
+  const { d, menuBar, hasNotch, notchW } = notchGeometry();
+  notchWin = new BrowserWindow({
+    width: NOTCH_W,
+    height: NOTCH_H,
+    x: Math.round(d.bounds.x + d.bounds.width / 2 - NOTCH_W / 2),
+    y: d.bounds.y,
+    type: "panel",
+    transparent: true,
+    frame: false,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    skipTaskbar: true,
+    focusable: false,
+    acceptFirstMouse: true,
+    enableLargerThanScreen: true,
+    fullscreenable: false,
+    show: false,
+    backgroundColor: "#00000000",
+    webPreferences: commonPrefs(),
+  });
+  notchWin.setAlwaysOnTop(true, "screen-saver");
+  notchWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  notchWin.setIgnoreMouseEvents(true, { forward: true });
+  notchWin.loadFile(path.join(__dirname, "renderer", "notch.html"), {
+    query: { mb: String(menuBar), notch: String(notchW), hasNotch: hasNotch ? "1" : "0", look: process.env.DF_LOOK ? "1" : "" },
+  });
+  notchWin.once("ready-to-show", () => {
+    if (store.mode === "notch" && !store.hidden) notchWin.showInactive();
+    // macOS menyu satri ustiga chiqishga qarshilik qilsa ham, joyini qayta qo'yamiz
+    notchWin.setBounds({ x: Math.round(d.bounds.x + d.bounds.width / 2 - NOTCH_W / 2), y: d.bounds.y, width: NOTCH_W, height: NOTCH_H });
+    push();
+  });
+  testHooks(notchWin, store.mode === "notch" ? process.env.DF_SHOT : null);
+}
+
+// ---------- Ish stolidagi kompanyon
+let pet = null;
+const petSize = () => ({ w: Math.round(PET_W * store.petScale), h: Math.round(PET_H * store.petScale) });
 function defaultPos() {
   const wa = screen.getPrimaryDisplay().workArea;
+  const { w } = petSize();
   // oyoqlari Dock'ning tepasida tursin; pastdagi taymer qatori Dock ustiga tushishi mumkin
-  return { x: wa.x + wa.width - WIN_W - 24, y: wa.y + wa.height - 248 };
+  return { x: wa.x + wa.width - w - 24, y: wa.y + wa.height - Math.round(248 * store.petScale) };
 }
 function clampPos(p) {
-  const d = screen.getDisplayNearestPoint({ x: p.x + WIN_W / 2, y: p.y + WIN_H / 2 });
+  const { w, h } = petSize();
+  const d = screen.getDisplayNearestPoint({ x: p.x + w / 2, y: p.y + h / 2 });
   const b = d.bounds;
   return {
-    x: Math.round(Math.min(Math.max(p.x, b.x - WIN_W / 3), b.x + b.width - (WIN_W * 2) / 3)),
-    y: Math.round(Math.min(Math.max(p.y, b.y), b.y + b.height - WIN_H / 2)),
+    x: Math.round(Math.min(Math.max(p.x, b.x - w / 3), b.x + b.width - (w * 2) / 3)),
+    y: Math.round(Math.min(Math.max(p.y, b.y + 20), b.y + b.height - h / 2)),
   };
 }
-function createWindow() {
+function createPetWindow() {
   const pos = clampPos(store.pos ?? defaultPos());
-  win = new BrowserWindow({
-    width: WIN_W,
-    height: WIN_H,
+  const { w, h } = petSize();
+  pet = new BrowserWindow({
+    width: w,
+    height: h,
     x: pos.x,
     y: pos.y,
+    type: "panel",
     transparent: true,
     frame: false,
     resizable: false,
@@ -324,82 +425,236 @@ function createWindow() {
     skipTaskbar: true,
     focusable: false, // ishlayotgan dasturdan fokusni o'g'irlamasin
     acceptFirstMouse: true,
-    alwaysOnTop: true,
     fullscreenable: false,
     show: false,
     backgroundColor: "#00000000",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      backgroundThrottling: false,
-      contextIsolation: true,
-      sandbox: true,
-    },
+    webPreferences: commonPrefs(),
   });
-  win.setAlwaysOnTop(true, "floating");
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  // Shaffof joylar orqali bosish ostidagi oynaga o'tsin; kompanyon ustida esa ushlaymiz
-  win.setIgnoreMouseEvents(true, { forward: true });
-  win.loadFile(path.join(__dirname, "renderer", "index.html"));
-  // Sinov rejimi: oynani rasmga olib chiqib ketadi
-  if (process.env.DF_SHOT) {
-    win.webContents.on("console-message", (e) => console.log("[renderer]", e.message));
-    setTimeout(async () => {
-      if (process.env.DF_HOVER) win.webContents.executeJavaScript("document.querySelectorAll('.hit').forEach(el=>el.dispatchEvent(new MouseEvent('mouseenter')))");
-      if (process.env.DF_RUN) toggle();
-      await new Promise((r) => setTimeout(r, 1500));
-      const img = await win.webContents.capturePage();
-      fs.writeFileSync(process.env.DF_SHOT, img.toPNG());
-      app.quit();
-    }, 3500);
-  }
-  win.once("ready-to-show", () => {
-    if (!store.hidden) win.showInactive();
+  pet.setAlwaysOnTop(true, "floating");
+  pet.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  pet.setIgnoreMouseEvents(true, { forward: true });
+  pet.loadFile(path.join(__dirname, "renderer", "index.html"));
+  pet.webContents.on("did-finish-load", () => pet.webContents.setZoomFactor(store.petScale));
+  pet.once("ready-to-show", () => {
+    if (store.mode === "desktop" && !store.hidden) pet.showInactive();
     push();
   });
+  testHooks(pet, store.mode === "desktop" ? process.env.DF_SHOT : null);
 }
 
+function applyVisibility() {
+  const showNotch = store.mode === "notch" && !store.hidden;
+  const showPet = store.mode === "desktop" && !store.hidden;
+  if (alive(notchWin)) showNotch ? notchWin.showInactive() : notchWin.hide();
+  if (alive(pet)) showPet ? pet.showInactive() : pet.hide();
+  rebuildMenu();
+  push();
+}
 function setHidden(h) {
   store.hidden = h;
   saveStore();
-  if (h) win?.hide();
-  else win?.showInactive();
-  rebuildMenu();
+  applyVisibility();
+}
+function setAppMode(m) {
+  if (store.mode === m) return;
+  store.mode = m;
+  store.hidden = false;
+  saveStore();
+  if (m === "desktop") {
+    // notch tagidan tushib, ekran pastiga yetib keladi
+    const { d } = notchGeometry();
+    const { w } = petSize();
+    pet.setPosition(Math.round(d.bounds.x + d.bounds.width / 2 - w / 2), d.bounds.y + 30);
+    applyVisibility();
+    pet.webContents.send("arrive");
+    const target = clampPos(store.pos ?? defaultPos());
+    glide(target.x, target.y, 900);
+    say("Ish stoliga tushdim! Meni surib qo'ysang bo'ladi.", 5000);
+  } else {
+    applyVisibility();
+    activity("start", "Notch'ga qaytdim 👋");
+  }
 }
 
-// Sudrash: kursor ortidan oynani suramiz
+// Oynani silliq ko'chirish (tushish va yurish uchun)
+let glideTimer = null;
+function glide(tx, ty, ms, onDone) {
+  clearInterval(glideTimer);
+  const [sx, sy] = pet.getPosition();
+  const t0 = Date.now();
+  glideTimer = setInterval(() => {
+    const k = Math.min(1, (Date.now() - t0) / ms);
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    pet.setPosition(Math.round(sx + (tx - sx) * e), Math.round(sy + (ty - sy) * e));
+    if (k >= 1) {
+      clearInterval(glideTimer);
+      glideTimer = null;
+      onDone?.();
+    }
+  }, 16);
+}
+
+// ---------- Ish stolida yurish
+let petHover = false;
+let walking = false;
+let nextWalkAt = Date.now() + 15_000;
+function maybeWalk() {
+  if (store.mode !== "desktop" || store.hidden || !store.roam || walking || drag || resizing || petHover) return;
+  if (T.running && T.mode === "focus") return; // fokus paytida jim o'tiradi
+  if (Date.now() < nextWalkAt) return;
+  nextWalkAt = Date.now() + 20_000 + Math.random() * 40_000;
+  const [x, y] = pet.getPosition();
+  const { w } = petSize();
+  const wa = screen.getDisplayNearestPoint({ x, y }).workArea;
+  const minX = wa.x + 10;
+  const maxX = wa.x + wa.width - w - 10;
+  let tx = x + (Math.random() < 0.5 ? -1 : 1) * (120 + Math.random() * 360);
+  tx = Math.max(minX, Math.min(maxX, tx));
+  if (Math.abs(tx - x) < 60) return;
+  walking = true;
+  pet.webContents.send("walk", { on: true, dir: tx > x ? 1 : -1 });
+  const speed = 70 * store.petScale; // px/soniya
+  const ms = (Math.abs(tx - x) / speed) * 1000;
+  const t0 = Date.now();
+  clearInterval(glideTimer);
+  glideTimer = setInterval(() => {
+    if (drag || petHover) {
+      stopWalk();
+      return;
+    }
+    const k = Math.min(1, (Date.now() - t0) / ms);
+    pet.setPosition(Math.round(x + (tx - x) * k), y);
+    if (k >= 1) stopWalk();
+  }, 16);
+}
+function stopWalk() {
+  clearInterval(glideTimer);
+  glideTimer = null;
+  if (!walking) return;
+  walking = false;
+  pet.webContents.send("walk", { on: false });
+  const [x, y] = pet.getPosition();
+  store.pos = { x, y };
+  saveStore();
+}
+
+// ---------- Sudrash va kattalashtirish
 let drag = null;
+let resizing = null;
 ipcMain.on("drag-start", (_e, off) => {
+  stopWalk();
   clearInterval(drag);
+  const z = store.petScale;
   drag = setInterval(() => {
     const c = screen.getCursorScreenPoint();
-    win.setPosition(Math.round(c.x - off.x), Math.round(c.y - off.y));
+    pet.setPosition(Math.round(c.x - off.x * z), Math.round(c.y - off.y * z));
   }, 12);
 });
 ipcMain.on("drag-end", () => {
   clearInterval(drag);
   drag = null;
-  const [x, y] = win.getPosition();
+  const [x, y] = pet.getPosition();
   const p = clampPos({ x, y });
-  win.setPosition(p.x, p.y);
+  pet.setPosition(p.x, p.y);
   store.pos = p;
   saveStore();
 });
-ipcMain.on("interactive", (_e, on) => win?.setIgnoreMouseEvents(!on, { forward: true }));
-ipcMain.on("cmd", (_e, c) => {
+function setScale(z) {
+  z = Math.round(Math.max(0.55, Math.min(1.8, z)) * 100) / 100;
+  const [x, y] = pet.getPosition();
+  const old = petSize();
+  store.petScale = z;
+  const { w, h } = petSize();
+  // pastki o'rta nuqta joyida qolsin (oyoqlari sakramasin)
+  pet.setBounds({ x: Math.round(x + old.w / 2 - w / 2), y: Math.round(y + old.h - h), width: w, height: h });
+  pet.webContents.setZoomFactor(z);
+  saveStore();
+  push();
+}
+ipcMain.on("resize-start", () => {
+  stopWalk();
+  const c0 = screen.getCursorScreenPoint();
+  const z0 = store.petScale;
+  clearInterval(resizing);
+  resizing = setInterval(() => {
+    const c = screen.getCursorScreenPoint();
+    setScale(z0 + (c.x - c0.x + (c.y - c0.y)) / 260);
+  }, 30);
+});
+ipcMain.on("resize-end", () => {
+  clearInterval(resizing);
+  resizing = null;
+  const [x, y] = pet.getPosition();
+  store.pos = clampPos({ x, y });
+  saveStore();
+  rebuildMenu();
+});
+
+ipcMain.on("interactive", (e, on) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  w?.setIgnoreMouseEvents(!on, { forward: true });
+  if (w === pet) {
+    petHover = on;
+    if (on) stopWalk();
+  }
+});
+ipcMain.on("cmd", (_e, c, arg) => {
   if (c === "toggle") toggle();
   else if (c === "skip") skip();
   else if (c === "reset") reset();
   else if (c === "menu") tray?.popUpContextMenu();
+  else if (c === "method") chooseMethod(arg);
+  else if (c === "desktop") setAppMode("desktop");
+  else if (c === "notch") setAppMode("notch");
+  else if (c === "big") openBig();
+  else if (c === "scale") setScale(arg);
+  else if (c === "blob") {
+    if (arg?.shape) store.blobShape = String(arg.shape);
+    if (arg?.color) store.blobColor = String(arg.color);
+    saveStore();
+    push();
+  }
 });
 ipcMain.on("poke", () => {
   if (!bubble.text || Date.now() > bubble.until)
     say(pick(["Hey! 😄", "Qitiq bo'lyapti!", "Ishla, ishla 🙂", "Men shu yerdaman!", "Diqqat bilan!"]), 2500);
 });
 
+// ---------- Katta oyna: to'liq DeepFokus (vazifalar, statistika, hisob)
+let big = null;
+function openBig() {
+  if (alive(big)) {
+    big.show();
+    big.focus();
+    return;
+  }
+  big = new BrowserWindow({
+    width: 1100,
+    height: 780,
+    minWidth: 420,
+    minHeight: 600,
+    title: "DeepFokus",
+    titleBarStyle: "hiddenInset",
+    backgroundColor: "#F5F5F7",
+    webPreferences: { contextIsolation: true, sandbox: true },
+  });
+  app.dock?.show();
+  big.loadURL(WEB_URL);
+  big.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+  big.on("closed", () => {
+    big = null;
+    app.dock?.hide();
+  });
+}
+
 // ---------- Menyu satri
 let tray = null;
 let lastTitle = "";
 function trayTitle() {
+  if (store.mode === "notch" && !store.hidden) return ""; // vaqt notch'da ko'rinib turadi
   if (!T.running && !(flowing() && T.flowAcc > 0) && T.remaining === dur(T.mode)) return "";
   const icon = T.mode === "focus" ? (secMode() ? "🔥" : "🎧") : "☕";
   return ` ${icon} ${fmt(left())}${T.running ? "" : " ⏸"}`;
@@ -409,6 +664,11 @@ function rebuildMenu() {
   const run = T.running;
   const today = todaySessions();
   const mins = today.reduce((a, s) => a + s.minutes, 0);
+  const sizes = [
+    ["Kichik", 0.75],
+    ["O'rta", 1],
+    ["Katta", 1.35],
+  ];
   const menu = Menu.buildFromTemplate([
     { label: `${method()?.name ?? "Maxsus"} · ${flowing() ? "Erkin fokus" : labels()[T.mode]}`, enabled: false },
     { label: run ? "Pauza" : T.mode === "focus" ? "Fokusni boshlash" : "Tanaffusni boshlash", accelerator: "Alt+Cmd+F", click: toggle },
@@ -428,16 +688,35 @@ function rebuildMenu() {
     { label: `Bugun: ${today.length} / ${store.dailyGoal} sprint · ${mins} daq`, enabled: false },
     { label: `🔥 Streak: ${streak()} kun`, enabled: false },
     { type: "separator" },
+    {
+      label: "Kompanyon qayerda yashaydi",
+      submenu: [
+        { label: "Notch'da (kamera yonida)", type: "radio", checked: store.mode === "notch", click: () => setAppMode("notch") },
+        { label: "Ish stolida", type: "radio", checked: store.mode === "desktop", click: () => setAppMode("desktop") },
+      ],
+    },
+    {
+      label: "Kattaligi (ish stolida)",
+      submenu: sizes.map(([l, z]) => ({
+        label: l,
+        type: "radio",
+        checked: Math.abs(store.petScale - z) < 0.05,
+        click: () => setScale(z),
+      })),
+    },
+    { label: "Ish stolida yurib yursin", type: "checkbox", checked: store.roam, click: (i) => ((store.roam = i.checked), saveStore()) },
     { label: store.hidden ? "Kompanyonni ko'rsatish" : "Kompanyonni yashirish", accelerator: "Alt+Cmd+H", click: () => setHidden(!store.hidden) },
     {
       label: "Kompanyonni joyiga qaytarish",
       click: () => {
         store.pos = defaultPos();
-        win.setPosition(store.pos.x, store.pos.y);
+        if (alive(pet)) pet.setPosition(store.pos.x, store.pos.y);
         saveStore();
         setHidden(false);
       },
     },
+    { type: "separator" },
+    { label: "To'liq oynani ochish", accelerator: "Alt+Cmd+D", click: openBig },
     { label: "Ovoz", type: "checkbox", checked: store.sound, click: (i) => ((store.sound = i.checked), saveStore()) },
     {
       label: "Kompyuter yonganda ochilsin",
@@ -446,7 +725,6 @@ function rebuildMenu() {
       click: (i) => app.setLoginItemSettings({ openAtLogin: i.checked }),
     },
     { type: "separator" },
-    { label: "DeepFokus saytini ochish", click: () => shell.openExternal(WEB_URL) },
     { label: "Chiqish", accelerator: "Cmd+Q", click: () => app.quit() },
   ]);
   tray.setContextMenu(menu);
@@ -474,6 +752,7 @@ function tick() {
     tray?.setTitle(title, { fontType: "monospacedDigit" });
     lastTitle = title;
   }
+  maybeWalk();
   push();
 }
 
@@ -501,6 +780,7 @@ function watchIdle() {
 
 app.whenReady().then(() => {
   loadStore();
+  if (process.env.DF_MODE) store.mode = process.env.DF_MODE;
   T.remaining = dur("focus");
   app.dock?.hide();
 
@@ -509,15 +789,22 @@ app.whenReady().then(() => {
   tray = new Tray(icon);
   tray.setToolTip("DeepFokus");
   rebuildMenu();
-  createWindow();
+  createNotchWindow();
+  createPetWindow();
 
   globalShortcut.register("Alt+Command+F", toggle);
   globalShortcut.register("Alt+Command+H", () => setHidden(!store.hidden));
+  globalShortcut.register("Alt+Command+D", openBig);
 
   setInterval(tick, 250);
+  setInterval(sendCursor, 33);
   setInterval(watchIdle, 5000);
   powerMonitor.on("lock-screen", () => {
     if (T.running && T.mode === "focus") say("Qaytganingda davom etamiz.", 5000);
+  });
+  screen.on("display-metrics-changed", () => {
+    const { d } = notchGeometry();
+    if (alive(notchWin)) notchWin.setBounds({ x: Math.round(d.bounds.x + d.bounds.width / 2 - NOTCH_W / 2), y: d.bounds.y, width: NOTCH_W, height: NOTCH_H });
   });
   setTimeout(() => say(todaySessions().length ? "Qaytding! Davom etamizmi?" : "Salom! Bugun nimaga fokus qilamiz?", 5000), 1200);
 });

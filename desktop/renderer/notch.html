@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+<title>DeepFokus notch</title>
+<link rel="stylesheet" href="notch.css" />
+</head>
+<body>
+  <div id="island" class="island collapsed">
+    <i class="ear l"></i><i class="ear r"></i>
+
+    <!-- yig'ilgan holat: chap qanotda yuz, o'ngda vaqt -->
+    <svg id="face" class="face" aria-hidden="true"></svg>
+    <div id="wtime" class="wtime"><b id="wdot"></b><span id="wtext"></span></div>
+    <div id="act" class="act" role="status" aria-live="polite"></div>
+
+    <!-- ochilgan panel -->
+    <div id="panel" class="panel">
+      <div id="main" class="view">
+        <div class="top">
+          <svg id="avatar" class="avatar" role="img" aria-label="DeepFokus kompanyoni"></svg>
+          <div class="timer">
+            <div id="ptime" class="ptime">25:00</div>
+            <div id="plabel" class="plabel">Pomodoro · Fokus</div>
+            <div class="ctrls">
+              <button id="reset" class="cb" aria-label="Qaytadan"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              <button id="toggle" class="cb main" aria-label="Boshlash">
+                <svg id="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></svg>
+                <svg id="ic-pause" viewBox="0 0 24 24" hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor" stroke="none"/></svg>
+              </button>
+              <button id="skip" class="cb" aria-label="Keyingisi"><svg viewBox="0 0 24 24"><path d="m6 5 9 7-9 7z"/><path d="M18 5v14"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div id="chips" class="chips" role="group" aria-label="Usul"></div>
+        <div class="foot">
+          <span id="stats" class="stats"></span>
+          <span class="acts">
+            <button id="gear" class="lb" aria-label="Ko'rinish"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
+            <button id="desk" class="lb wide">Ish stoliga</button>
+            <button id="big" class="lb wide">To'liq oyna</button>
+          </span>
+        </div>
+      </div>
+
+      <div id="look" class="view" hidden>
+        <div class="vhead"><button id="back" class="lb wide">← Orqaga</button><span>Ko'rinish</span></div>
+        <div class="sec">Shakl</div>
+        <div id="shapes" class="grid shapes"></div>
+        <div class="sec">Rang</div>
+        <div id="colors" class="grid colors"></div>
+        <div class="sec">Kayfiyatlar <small>(bosib ko'ring)</small></div>
+        <div id="exprs" class="chips wrap"></div>
+      </div>
+    </div>
+  </div>
+  <script src="notch.js"></script>
+</body>
+</html>

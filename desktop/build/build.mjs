@@ -11,6 +11,14 @@ await build({
   minify: true,
 });
 await build({
+  entryPoints: ["renderer/notch.ts"],
+  bundle: true,
+  outfile: "renderer/notch.js",
+  format: "iife",
+  target: "chrome130",
+  minify: true,
+});
+await build({
   entryPoints: ["../lib/methods.ts"],
   bundle: true,
   outfile: "shared/methods.js",

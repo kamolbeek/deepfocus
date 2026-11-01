@@ -156,6 +156,8 @@ export function createCompanion(opts: CompanionOptions) {
   let pokeAt = -1e9;
   let lookX = 0;
   let lookTarget = 0;
+  let lookY = 0;
+  let lookTargetY = 0;
   let raf = 0;
   let alive = true;
   const tex: Partial<Record<Mood, Tex>> = {};
@@ -176,9 +178,13 @@ export function createCompanion(opts: CompanionOptions) {
     prog,
     sh(
       gl.FRAGMENT_SHADER,
-      "precision mediump float; varying vec2 v; uniform sampler2D t; uniform sampler2D t2; uniform vec4 e1; uniform vec4 e2; uniform float bl; uniform float hl;" +
-        "float lid(vec4 e){ vec2 d=(v-e.xy)/e.zw; float inside=1.0-smoothstep(0.92,1.0,length(d)); float edge=e.y-e.w+bl*2.0*e.w; return inside*(1.0-smoothstep(edge-0.003,edge+0.003,v.y)); }" +
-        "void main(){ vec4 c=texture2D(t,v); if(hl>0.5 && bl>0.001){ float m=max(lid(e1),lid(e2)); c=mix(c,texture2D(t2,v),m); } gl_FragColor=c; }",
+      // Ko'z qorachig'i kursorga qarab siljiydi: ko'z atrofi teri qatlami (t2) bilan yopiladi,
+      // ko'zning o'zi esa siljigan joyda qayta chiziladi. Yumilish ham siljigan ko'zga mos.
+      "precision mediump float; varying vec2 v; uniform sampler2D t; uniform sampler2D t2; uniform vec4 e1; uniform vec4 e2; uniform float bl; uniform float hl; uniform vec2 lk;" +
+        "vec2 off(vec4 e){ return lk*e.zw*vec2(0.34,0.24); }" +
+        "float lid(vec4 e){ vec2 c=e.xy+off(e); vec2 d=(v-c)/e.zw; float inside=1.0-smoothstep(0.92,1.0,length(d)); float edge=c.y-e.w+bl*2.0*e.w; return inside*(1.0-smoothstep(edge-0.003,edge+0.003,v.y)); }" +
+        "vec4 eye(vec4 e, vec4 c){ float s=1.0-smoothstep(1.12,1.38,length((v-e.xy)/e.zw)); if(s<=0.0) return c; c=mix(c,texture2D(t2,v),s); vec2 q=v-off(e); float m=1.0-smoothstep(0.955,1.02,length((q-e.xy)/e.zw)); return mix(c,texture2D(t,q),m*s); }" +
+        "void main(){ vec4 c=texture2D(t,v); if(hl>0.5){ c=eye(e2,eye(e1,c)); if(bl>0.001){ float m=max(lid(e1),lid(e2)); c=mix(c,texture2D(t2,v),m); } } gl_FragColor=c; }",
     ),
   );
   gl.linkProgram(prog);
@@ -213,6 +219,7 @@ export function createCompanion(opts: CompanionOptions) {
     e2: gl.getUniformLocation(prog, "e2"),
     bl: gl.getUniformLocation(prog, "bl"),
     hl: gl.getUniformLocation(prog, "hl"),
+    lk: gl.getUniformLocation(prog, "lk"),
   };
   const rest = new Float32Array((NX + 1) * (NY + 1) * 2);
   const out = new Float32Array(rest.length);
@@ -308,7 +315,8 @@ export function createCompanion(opts: CompanionOptions) {
     const t = tex[mood];
     if (!t) return;
     const def = MOODS.find((m) => m.id === mood)!;
-    lookX += (lookTarget - lookX) * 0.06;
+    lookX += (lookTarget - lookX) * 0.08;
+    lookY += (lookTargetY - lookY) * 0.08;
     const P = pose(mood, now / 1000, (now - pokeAt) / 1000, lookX);
     const W = t.w;
     const H = t.h;
@@ -345,6 +353,7 @@ export function createCompanion(opts: CompanionOptions) {
     g.uniform1i(loc.t, 0);
     g.uniform1f(loc.hl, t.lid ? 1 : 0);
     g.uniform1f(loc.bl, bl);
+    g.uniform2f(loc.lk, lookX, lookY);
     if (t.lid) {
       g.activeTexture(g.TEXTURE1);
       g.bindTexture(g.TEXTURE_2D, t.lid);
@@ -358,7 +367,9 @@ export function createCompanion(opts: CompanionOptions) {
 
     lctx.clearRect(0, 0, opts.lids.width, opts.lids.height);
     kctx.clearRect(0, 0, opts.back.width, opts.back.height);
-    if (bl > 0.01) for (const e of def.eyes) drawLash(X, P, W * e[0], H * e[1], W * e[2], H * e[3], bl);
+    if (bl > 0.01)
+      for (const e of def.eyes)
+        drawLash(X, P, W * (e[0] + lookX * e[2] * 0.34), H * (e[1] + lookY * e[3] * 0.24), W * e[2], H * e[3], bl);
     if (def.stars && def.orbit) drawStars(def, X, W, H, now / 1000);
   }
 
@@ -435,8 +446,10 @@ export function createCompanion(opts: CompanionOptions) {
     poke() {
       pokeAt = performance.now();
     },
-    look(x: number) {
+    // x, y: -1..1 (chap/yuqori — manfiy). Ko'zlar va tana kursorga qaraydi
+    look(x: number, y = 0) {
       lookTarget = clamp(x, -1, 1);
+      lookTargetY = clamp(y, -1, 1);
     },
     destroy() {
       alive = false;

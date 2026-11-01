@@ -68,3 +68,31 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   0% { transform: translate(0,0); opacity: 0; } 20% { opacity: 1; }
   100% { transform: translate(18px,-46px); opacity: 0; }
 }
+
+/* Kattalashtirish dastagi: faqat sichqoncha ustida ko'rinadi */
+.grip {
+  position: absolute; right: -2px; bottom: 2px; width: 20px; height: 20px; border-radius: 6px;
+  background: rgba(255,255,255,.92); box-shadow: 0 1px 4px rgba(0,0,0,.18);
+  display: flex; align-items: center; justify-content: center; cursor: nwse-resize;
+  opacity: 0; transition: opacity .2s;
+}
+.grip svg { width: 11px; height: 11px; fill: none; stroke: #6E6E73; stroke-width: 1.6; stroke-linecap: round; }
+body:hover .grip { opacity: 1; }
+
+/* Yurish: qadam bilan tebranish va yo'nalishga burilish */
+.stage { --dir: 1; transition: transform .25s; }
+.stage.walking { animation: walk .42s ease-in-out infinite; }
+.stage.walking canvas { transform: scaleX(var(--dir)); }
+@keyframes walk {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-5px) rotate(-3deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-5px) rotate(3deg); }
+}
+/* Notch'dan tushib kelish */
+.stage.arrive { animation: arrive .9s cubic-bezier(.3,1.4,.5,1); }
+@keyframes arrive {
+  0% { transform: translateY(-40px) scale(.6); opacity: 0; }
+  60% { transform: translateY(4px) scale(1.04, .94); opacity: 1; }
+  100% { transform: none; }
+}

@@ -19,7 +19,6 @@ type State = {
   hour: number;
   lastAt: number;
   bubble: string;
-  look: number;
 };
 
 declare global {
@@ -27,7 +26,12 @@ declare global {
     df: {
       onState: (cb: (s: State) => void) => void;
       onSound: (cb: (k: string) => void) => void;
-      cmd: (c: string) => void;
+      onCursor: (cb: (c: { x: number; y: number }) => void) => void;
+      onWalk: (cb: (w: { on: boolean; dir?: number }) => void) => void;
+      onArrive: (cb: () => void) => void;
+      resizeStart: () => void;
+      resizeEnd: () => void;
+      cmd: (c: string, arg?: unknown) => void;
       poke: () => void;
       interactive: (on: boolean) => void;
       dragStart: (off: { x: number; y: number }) => void;
@@ -120,6 +124,38 @@ $("reset").addEventListener("click", () => window.df.cmd("reset"));
 $("skip").addEventListener("click", () => window.df.cmd("skip"));
 $("menu").addEventListener("click", () => window.df.cmd("menu"));
 
+// ---------- Kursor: ko'zlar ekrandagi kursor ortidan qaraydi (gorizontal va vertikal)
+window.df.onCursor((c) => {
+  // kattalik (zoom) bo'lsa, ekran pikselini sahifa pikseliga o'tkazamiz
+  const zoom = window.outerWidth / window.innerWidth || 1;
+  const r = stage.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height * 0.42;
+  engine?.look((c.x / zoom - cx) / 420, (c.y / zoom - cy) / 300);
+});
+
+// ---------- Yurish: kompanyon ekran bo'ylab yurganda tebranadi va yo'nalishga buriladi
+window.df.onWalk((w) => {
+  stage.classList.toggle("walking", w.on);
+  if (w.on && w.dir) stage.style.setProperty("--dir", String(w.dir));
+});
+// Notch'dan tushib kelganda
+window.df.onArrive(() => {
+  stage.classList.remove("arrive");
+  void stage.offsetWidth;
+  stage.classList.add("arrive");
+  engine?.poke();
+});
+
+// ---------- Kattalashtirish dastagi
+const grip = $("grip");
+grip.addEventListener("pointerdown", (e) => {
+  e.stopPropagation();
+  grip.setPointerCapture(e.pointerId);
+  window.df.resizeStart();
+});
+grip.addEventListener("pointerup", () => window.df.resizeEnd());
+
 // ---------- Ovozlar
 let audio: AudioContext | null = null;
 window.df.onSound((kind) => {
@@ -168,7 +204,6 @@ function render() {
     mood = m;
     engine?.setMood(m);
   }
-  if (!hovering) engine?.look(S.look);
   $("zzz").hidden = mood !== "sleep";
 
   // Gap pufakchasi

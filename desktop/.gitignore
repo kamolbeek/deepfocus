@@ -3,3 +3,4 @@ dist/
 renderer/app.js
 renderer/companion/
 shared/
+renderer/notch.js
