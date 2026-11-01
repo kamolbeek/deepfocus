@@ -1,7 +1,5 @@
 // Notch'dagi arvohcha: Kamoliddin bergan asl rasm (4 ta holat) — o'zimiz hech narsa chizmaymiz.
 // Rasmlar faqat siljiydi, egiladi, suzadi, aylanadi va kerak bo'lsa rangi almashtiriladi.
-import { drawOutfitBehind, drawOutfitFront, makeHead } from "./buddy/outfits";
-import type { Outfit } from "./buddy/engine";
 
 type Pose = "main" | "wave" | "smile" | "sleep";
 // Har bir rasm: o'lchami, gumbaz tepasi va markazi, ko'zlar markazi (rasm pikselida, gumbaz eni = 240)
@@ -121,9 +119,6 @@ export class GhostSprite {
   private emote: GhostEmote | null = null;
   private emoteUntil = 0;
   private slaps: number[] = [];
-  outfit: Outfit = "none";
-  private outfitTarget: Outfit = "none";
-  private outfitPresence = 0;
   private physDx = 0;
 
   setColor(hex: string) {
@@ -137,13 +132,6 @@ export class GhostSprite {
       this.jump();
     }
     if (s === "dizzy") this.wobbleT = 0;
-  }
-  setOutfit(o: Outfit, animate = true) {
-    this.outfitTarget = o;
-    if (!animate) {
-      this.outfit = o;
-      this.outfitPresence = o === "none" ? 0 : 1;
-    }
   }
   triggerEmote(e: GhostEmote, seconds = 1.5) {
     this.emote = e;
@@ -209,11 +197,6 @@ export class GhostSprite {
     if (this.squashT >= 0 && (this.squashT += dt) > 0.35) this.squashT = -1;
     if (this.spinT >= 0 && (this.spinT += dt) > this.spinDur) this.spinT = -1;
     if (this.wobbleT >= 0 && (this.wobbleT += dt) > (this.state === "dizzy" ? 2.6 : 0.6)) this.wobbleT = -1;
-    // kiyim almashishi: avvalgisi ketadi, keyin yangisi keladi
-    if (this.outfit !== this.outfitTarget) {
-      this.outfitPresence = Math.max(0, this.outfitPresence - dt * 5);
-      if (this.outfitPresence === 0) this.outfit = this.outfitTarget;
-    } else if (this.outfit !== "none") this.outfitPresence = Math.min(1, this.outfitPresence + dt * 4);
   }
 
   draw(x: CanvasRenderingContext2D, W: number, H: number) {
@@ -256,34 +239,7 @@ export class GhostSprite {
     // rasmni gumbaz markazi va tepasi bo'yicha joylash (hamma holat bir joyda turadi)
     const ox = -m.cx;
     const oy = -tall - m.top;
-    const head = this.outfit !== "none" && this.outfitPresence > 0.01 ? this.headFor(m, ox, oy) : null;
-    if (head) {
-      x.save();
-      x.translate(head.x, head.y);
-      x.rotate(head.rot);
-      drawOutfitBehind(x, this.outfit, head.h, { presence: this.outfitPresence, morph: 0 });
-      x.restore();
-    }
     x.drawImage(im, ox, oy, m.w, m.h);
-    if (head) {
-      x.save();
-      x.translate(head.x, head.y);
-      x.rotate(head.rot);
-      drawOutfitFront(x, this.outfit, head.h, { presence: this.outfitPresence, morph: 0 });
-      x.restore();
-    }
     x.restore();
-  }
-
-  /** Kiyim uchun bosh: gumbaz eniga moslab (kattaroq chiqmasin), ko'zlar tomonga ozgina surilgan. */
-  private headFor(m: (typeof META)[Pose], ox: number, oy: number) {
-    // ko'zoynak ko'zlar ustiga tushsin, qalpoqlar gumbaz tepasiga
-    const face = this.outfit === "sunglasses" || this.outfit === "roundGlasses";
-    const rx = (DOME / 2) * (face ? 1.2 : 0.9);
-    const R = rx / 1.14;
-    const ry = R * 0.88;
-    const cx = ox + m.cx + (m.eyeX - m.cx) * (face ? 1.25 : 0.45);
-    const cy = face ? oy + m.eyeY - ry * 0.06 : oy + m.top + ry * 1.02;
-    return { x: cx, y: cy, rot: face ? -0.14 : 0, h: makeHead(R, 0, 0, this.physDx, 0) };
   }
 }

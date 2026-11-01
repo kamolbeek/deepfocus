@@ -48,9 +48,13 @@ const DEFAULTS = {
   sessions: [],
 };
 let store = { ...DEFAULTS };
+// kutilmagan xato bo'lsa ham ekranga oyna chiqarmaymiz — logga yozib, ishlashda davom etamiz
+process.on("uncaughtException", (err) => console.error("[deepfokus]", err));
 function loadStore() {
   try {
     store = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(storePath(), "utf8")) };
+    if (store.pos && !(Number.isFinite(store.pos.x) && Number.isFinite(store.pos.y))) store.pos = null;
+    if (!Number.isFinite(store.petScale)) store.petScale = 1;
     // 0.4: notch'da arvohcha va o'zimizning lavanda rangi
     if (!store.v04) {
       store.v04 = true;
@@ -551,25 +555,37 @@ function stopWalk() {
 // ---------- Sudrash va kattalashtirish
 let drag = null;
 let resizing = null;
+const okNum = (n) => typeof n === "number" && Number.isFinite(n);
+const DRAG_MAX_MS = 20000; // xavfsizlik: sudrash/kattalashtirish hech qachon cheksiz davom etmaydi
 ipcMain.on("drag-start", (_e, off) => {
   stopWalk();
   clearInterval(drag);
-  const z = store.petScale;
+  clearInterval(resizing);
+  resizing = null;
+  if (!off || !okNum(off.x) || !okNum(off.y)) return;
+  const z = okNum(store.petScale) ? store.petScale : 1;
+  const t0 = Date.now();
   drag = setInterval(() => {
+    if (!pet || pet.isDestroyed() || Date.now() - t0 > DRAG_MAX_MS) return endDrag();
     const c = screen.getCursorScreenPoint();
-    pet.setPosition(Math.round(c.x - off.x * z), Math.round(c.y - off.y * z));
+    const x = Math.round(c.x - off.x * z);
+    const y = Math.round(c.y - off.y * z);
+    if (okNum(x) && okNum(y)) pet.setPosition(x, y);
   }, 12);
 });
-ipcMain.on("drag-end", () => {
+function endDrag() {
   clearInterval(drag);
   drag = null;
+  if (!pet || pet.isDestroyed()) return;
   const [x, y] = pet.getPosition();
   const p = clampPos({ x, y });
   pet.setPosition(p.x, p.y);
   store.pos = p;
   saveStore();
-});
+}
+ipcMain.on("drag-end", () => endDrag());
 function setScale(z) {
+  if (!okNum(z) || !pet || pet.isDestroyed()) return;
   z = Math.round(Math.max(0.55, Math.min(1.8, z)) * 100) / 100;
   const [x, y] = pet.getPosition();
   const old = petSize();
@@ -583,22 +599,28 @@ function setScale(z) {
 }
 ipcMain.on("resize-start", () => {
   stopWalk();
+  clearInterval(drag);
+  drag = null;
   const c0 = screen.getCursorScreenPoint();
-  const z0 = store.petScale;
+  const z0 = okNum(store.petScale) ? store.petScale : 1;
+  const t0 = Date.now();
   clearInterval(resizing);
   resizing = setInterval(() => {
+    if (Date.now() - t0 > DRAG_MAX_MS) return endResize();
     const c = screen.getCursorScreenPoint();
     setScale(z0 + (c.x - c0.x + (c.y - c0.y)) / 260);
   }, 30);
 });
-ipcMain.on("resize-end", () => {
+ipcMain.on("resize-end", () => endResize());
+function endResize() {
   clearInterval(resizing);
   resizing = null;
+  if (!pet || pet.isDestroyed()) return;
   const [x, y] = pet.getPosition();
   store.pos = clampPos({ x, y });
   saveStore();
   rebuildMenu();
-});
+}
 
 ipcMain.on("interactive", (e, on) => {
   const w = BrowserWindow.fromWebContents(e.sender);

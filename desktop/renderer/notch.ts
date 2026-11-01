@@ -65,19 +65,6 @@ export const COLORS: { name: string; hex: string }[] = [
   { name: "Paxta", hex: "#F2F0EC" },
   { name: "Ko'mir", hex: "#3A3A42" },
 ];
-const OUTFITS: { id: Outfit; name: string }[] = [
-  { id: "none", name: "Kiyimsiz" },
-  { id: "crown", name: "Toj" },
-  { id: "santaHat", name: "Qorbobo qalpog'i" },
-  { id: "beanie", name: "Shapka" },
-  { id: "partyHat", name: "Bayram qalpog'i" },
-  { id: "bow", name: "Bantik" },
-  { id: "sunglasses", name: "Quyosh ko'zoynagi" },
-  { id: "roundGlasses", name: "Dumaloq ko'zoynak" },
-  { id: "scarf", name: "Sharf" },
-  { id: "bunnyEars", name: "Quyon quloqlari" },
-  { id: "witchHat", name: "Sehrgar shlyapasi" },
-];
 const EMOTES: { id: GhostEmote | "dizzy" | "roll"; name: string }[] = [
   { id: "love", name: "❤️ Yurak" },
   { id: "happy", name: "Xursand" },
@@ -94,7 +81,7 @@ const WING_MINI = NOTCH ? 34 : 50;
 type View = "mini" | "compact" | "peek" | "activity" | "open" | "look";
 const width = (v: View) =>
   v === "open" || v === "look" ? 420 : v === "activity" ? Math.max(NOTCH + 2 * 120, 320) : NOTCH + 2 * (v === "mini" ? WING_MINI : v === "peek" ? WING_COMPACT + 8 : WING_COMPACT);
-const height = (v: View) => (v === "open" ? MB + 228 : v === "look" ? MB + 300 : v === "activity" ? MB + 32 : v === "peek" ? MB + 8 : MB);
+const height = (v: View) => (v === "open" ? MB + 228 : v === "look" ? MB + 180 : v === "activity" ? MB + 32 : v === "peek" ? MB + 8 : MB);
 const radius = (v: View) => (v === "open" || v === "look" ? 30 : v === "activity" ? 20 : v === "peek" ? 16 : 12);
 
 // Kompanyon kanvasi: tana kengligi ≈ 0.68 × kanvas
@@ -226,18 +213,6 @@ function miniIcon(size: number, setup: (e: GhostSprite) => void) {
   };
 }
 const icons: ReturnType<typeof miniIcon>[] = [];
-const outfitBtns: Record<string, HTMLButtonElement> = {};
-for (const o of OUTFITS) {
-  const b = document.createElement("button");
-  b.title = o.name;
-  b.setAttribute("aria-label", o.name);
-  const ic = miniIcon(40, (e) => e.setOutfit(o.id, false));
-  icons.push(ic);
-  b.appendChild(ic.c);
-  b.addEventListener("click", () => window.df.cmd("look", { outfit: o.id }));
-  $("outfits").appendChild(b);
-  outfitBtns[o.id] = b;
-}
 const colorBtns: Record<string, HTMLButtonElement> = {};
 for (const c of COLORS) {
   const b = document.createElement("button");
@@ -415,18 +390,15 @@ function render(s: State) {
     }
   }
 
-  // ko'rinish: kiyim, shakl, rang
-  const lk = `${s.outfit}|${s.bodyShape}|${s.bodyColor}`;
+  // ko'rinish: rang
+  const lk = s.bodyColor;
   if (lk !== lookKey) {
-    const first = !lookKey;
     lookKey = lk;
-    engine.setOutfit(s.outfit, !first);
     engine.setColor(s.bodyColor);
     root.setProperty("--acc", s.bodyColor);
     for (const ic of icons) {
       ic.e.setColor(s.bodyColor);
     }
-    for (const o of OUTFITS) outfitBtns[o.id].classList.toggle("on", o.id === s.outfit);
     for (const c of COLORS) colorBtns[c.hex].classList.toggle("on", c.hex === s.bodyColor);
     redrawIcons();
   }

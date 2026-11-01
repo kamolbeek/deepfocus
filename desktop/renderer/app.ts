@@ -71,7 +71,7 @@ for (const el of document.querySelectorAll<HTMLElement>(".hit")) {
   });
   el.addEventListener("mouseleave", () => {
     hovering = false;
-    if (!dragging) window.df.interactive(false);
+    if (!dragging && !resizingNow) window.df.interactive(false);
     render();
   });
 }
@@ -95,6 +95,17 @@ stage.addEventListener("pointermove", (e) => {
     window.df.dragStart({ x: down.cx, y: down.cy });
   }
 });
+// sichqoncha qo'yib yuborilmasa ham (oynadan tashqarida, boshqa ilovaga o'tganda) sudrash albatta to'xtaydi
+function endDrag() {
+  if (dragging) {
+    window.df.dragEnd();
+    dragging = false;
+    stage.classList.remove("dragging");
+  }
+  down = null;
+}
+stage.addEventListener("pointercancel", endDrag);
+stage.addEventListener("lostpointercapture", endDrag);
 stage.addEventListener("pointerup", () => {
   if (dragging) {
     window.df.dragEnd();
@@ -148,13 +159,34 @@ window.df.onArrive(() => {
 });
 
 // ---------- Kattalashtirish dastagi
+let resizingNow = false;
 const grip = $("grip");
+function endResize() {
+  if (!resizingNow) return;
+  resizingNow = false;
+  window.df.resizeEnd();
+  if (!hovering) window.df.interactive(false);
+}
 grip.addEventListener("pointerdown", (e) => {
   e.stopPropagation();
+  if (e.button !== 0) return;
   grip.setPointerCapture(e.pointerId);
+  resizingNow = true;
+  window.df.interactive(true);
   window.df.resizeStart();
 });
-grip.addEventListener("pointerup", () => window.df.resizeEnd());
+grip.addEventListener("pointerup", endResize);
+grip.addEventListener("pointercancel", endResize);
+grip.addEventListener("lostpointercapture", endResize);
+// tugma qo'yib yuborilgani sezilmay qolsa ham: sichqoncha tugmasi bosilmagan holda harakat — to'xtatamiz
+window.addEventListener("pointermove", (e) => {
+  if (resizingNow && e.buttons === 0) endResize();
+  if (dragging && e.buttons === 0) endDrag();
+});
+window.addEventListener("blur", () => {
+  endResize();
+  endDrag();
+});
 
 // ---------- Ovozlar
 let audio: AudioContext | null = null;
