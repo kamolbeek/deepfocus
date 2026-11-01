@@ -43,14 +43,20 @@ const DEFAULTS = {
   petScale: 1,
   roam: true, // ish stolida yurib yurish
   outfit: "none", // notch'dagi kompanyon kiyimi
-  bodyShape: "round",
-  bodyColor: "#A992EA",
+  bodyShape: "ghost",
+  bodyColor: "#C8A5E7",
   sessions: [],
 };
 let store = { ...DEFAULTS };
 function loadStore() {
   try {
     store = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(storePath(), "utf8")) };
+    // 0.4: notch'da arvohcha va o'zimizning lavanda rangi
+    if (!store.v04) {
+      store.v04 = true;
+      if (store.bodyShape === "round") store.bodyShape = "ghost";
+      if (store.bodyColor === "#A992EA") store.bodyColor = "#C8A5E7";
+    }
   } catch {
     store = { ...DEFAULTS };
   }

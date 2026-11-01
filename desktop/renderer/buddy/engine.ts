@@ -18,7 +18,7 @@ export type BotEmoteName = "love" | "surprised" | "proud" | "wink" | "yawn" | "h
 export type Outfit =
   | "none" | "partyHat" | "beanie" | "crown" | "sunglasses" | "roundGlasses"
   | "bow" | "scarf" | "witchHat" | "pumpkin" | "santaHat" | "bunnyEars";
-export type BodyShape = "round" | "square" | "long" | "cloud";
+export type BodyShape = "ghost" | "round" | "square" | "long" | "cloud";
 // Ovozlar Coucou'niki emas: kerak bo'lsa tashqaridan ulanadi
 const Sound = { play: (name: string) => BotEngine.onSound?.(name) };
 
@@ -218,16 +218,20 @@ export class BotEngine {
   static onSound: ((name: string) => void) | null = null;
   isMini = false;
   /** DeepFokus: tana ranglari (yuqori yorug', past to'q), shakl va qo'llar */
-  palTop: RGB = hexToRGB("#D3C2F7");
-  palBottom: RGB = hexToRGB("#9E87E4");
-  shape: BodyShape = "round";
+  palTop: RGB = hexToRGB("#DDC4F2");
+  palBottom: RGB = hexToRGB("#AF90CC");
+  shape: BodyShape = "ghost";
   handsEnabled = false;
   showAntenna = true;
+  /** Krem yuz niqobi (arvohchada yo'q — yuz tana rangida). */
+  showFace = false;
+  /** Kichkina jilmayish (arvohcha uchun). */
+  showSmile = true;
 
   setColor(hex: string) {
     const c = hexToRGB(hex);
-    this.palTop = mix3(c, [1, 1, 1], 0.42);
-    this.palBottom = mix3(c, [0, 0, 0], 0.06);
+    this.palTop = mix3(c, [1, 1, 1], 0.3);
+    this.palBottom = mix3(c, [0, 0, 0], 0.12);
   }
   /** Solid body colour for mini bots / integration pills (null = Mochi gradient). */
   bodyColor: RGB | null = null;
@@ -853,13 +857,14 @@ export class BotEngine {
     const dressed = !this.isMini && this.outfit !== "none";
     const head = dressed ? makeHead(R, this.yaw, this.pitch, this.physDx, this.physDy) : null;
     const outfitState = { presence: this.outfitPresence, morph: this.morph };
-    if (head) drawOutfitBehind(x, this.outfit, head, outfitState);
+    const lift = (HAT_OUTFITS.has(this.outfit) && this.shape === "ghost" ? -0.62 : this.faceDY) * ry;
+    if (head) { x.save(); x.translate(0, lift); drawOutfitBehind(x, this.outfit, head, outfitState); x.restore(); }
 
     const body = this.bodyPath(rx, ry, R);
     const hatOn = dressed && HAT_OUTFITS.has(this.outfit) && this.outfitPresence > 0.5;
-    if (this.showAntenna && !hatOn) this.drawAntenna(x, R, rx, ry);
+    if (this.showAntenna && !hatOn && this.shape !== "ghost") this.drawAntenna(x, R, rx, ry);
     this.drawBody(x, body, R, rx, ry);
-    this.drawFacePlate(x, body, R, rx, ry);
+    if (this.showFace) this.drawFacePlate(x, body, R, rx, ry);
 
     const blushVal = Math.max(this.blush, this.tint * 0.5) * (1 - this.morph);
     if (blushVal > 0.01) {
@@ -869,7 +874,7 @@ export class BotEngine {
       x.fillStyle = `rgba(255,120,150,${0.5 * blushVal})`;
       for (const sd of [-1, 1]) {
         x.beginPath();
-        x.ellipse(sd * rx * 0.55 + yOffset, ry * 0.2, R * 0.17, R * 0.1, 0, 0, Math.PI * 2);
+        x.ellipse(sd * rx * 0.55 + yOffset, ry * (0.2 + this.faceDY), R * 0.17, R * 0.1, 0, 0, Math.PI * 2);
         x.fill();
       }
       x.restore();
@@ -877,8 +882,9 @@ export class BotEngine {
 
     this.drawEyes(x, body, R, rx, ry);
     if (this.morph > 0.05) this.drawMouth(x, body, R);
+    else if (this.showSmile) this.drawSmile(x, body, R, rx, ry);
 
-    if (head) drawOutfitFront(x, this.outfit, head, outfitState);
+    if (head) { x.save(); x.translate(0, lift); drawOutfitFront(x, this.outfit, head, outfitState); x.restore(); }
 
     x.restore();
     x.restore();
@@ -892,11 +898,12 @@ export class BotEngine {
   /** DeepFokus antennasi: boshi bilan buriladi, uchi prujinadek orqada qoladi. */
   private drawAntenna(x: CanvasRenderingContext2D, R: number, rx: number, ry: number) {
     const baseX = Math.sin(this.yaw) * rx * 0.28;
-    const baseY = -ry * 0.86 + Math.sin(this.pitch) * ry * 0.12;
+    const lift = this.shape === "ghost" ? -ry * 0.14 : 0;
+    const baseY = -ry * 0.86 + lift + Math.sin(this.pitch) * ry * 0.12;
     const lag = this.physDx * R * 0.32;
     const bob = this.physDy * R * 0.12;
     const tipX = baseX + R * 0.08 + lag + Math.sin(this.yaw) * rx * 0.14;
-    const tipY = -ry * 1.36 + bob - Math.sin(this.pitch) * ry * 0.06;
+    const tipY = -ry * 1.36 + lift + bob - Math.sin(this.pitch) * ry * 0.06;
     x.save();
     x.strokeStyle = rgba(mix3(this.palBottom, [0, 0, 0], 0.04));
     x.lineWidth = Math.max(1.2, R * 0.085);
@@ -945,7 +952,77 @@ export class BotEngine {
     x.restore();
   }
 
+  /** Jilmayish: ko'zlar ostida, bosh bilan buriladi; ko'z yumilganda yoki ochilganda yo'qoladi. */
+  private drawSmile(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
+    const eye = this.eyeOverride ?? this.cfg.eye;
+    if (eye !== "pill" && eye !== "wide" && eye !== "happy" && eye !== "heart") return;
+    const pitch = EYE_P + this.pitch - 0.36;
+    const cp = Math.cos(pitch);
+    if (Math.cos(this.yaw) * cp <= 0.2) return;
+    const sx = Math.sin(this.yaw) * cp * rx;
+    const sy = -Math.sin(pitch) * ry + this.faceDY * ry + (this.shape === "ghost" ? ry * 0.06 : 0);
+    const w = R * 0.15 * Math.max(0.3, Math.cos(this.yaw)) * (this.isMini ? 1.5 : 1);
+    x.save();
+    x.clip(body);
+    x.strokeStyle = this.isMini ? MINI_INK : INK;
+    x.lineWidth = Math.max(0.9, R * 0.055);
+    x.lineCap = "round";
+    x.beginPath();
+    x.moveTo(sx - w, sy - w * 0.15);
+    x.quadraticCurveTo(sx, sy + w * 0.75, sx + w, sy - w * 0.15);
+    x.stroke();
+    x.restore();
+  }
+
+  /** Arvohcha: bo'yiga uzun, tepasi gumbaz, yonida qo'lchalar, pastida yumshoq to'lqinli etak. */
+  private ghostPath(rx: number, ry: number): Path2D {
+    const p = new Path2D();
+    const t = now();
+    const W = rx * 0.8;
+    const top = -ry * 1.36;
+    const mid = -ry * 0.3; // gumbaz shu yergacha
+    const base = ry * 1.02; // etak boshlanadigan chiziq
+    const flare = W * 1.07;
+    const amp = ry * 0.13;
+    const n = 44;
+    for (let i = 0; i <= n; i++) {
+      const a = Math.PI + (i / n) * Math.PI;
+      const px = Math.cos(a) * W;
+      const py = mid + Math.sin(a) * (mid - top);
+      if (i === 0) p.moveTo(px, py);
+      else p.lineTo(px, py);
+    }
+    p.bezierCurveTo(W * 1.01, mid + (base - mid) * 0.5, flare, base - ry * 0.3, flare, base);
+    const waves = 4;
+    const m = 72;
+    for (let i = 1; i <= m; i++) {
+      const u = i / m;
+      const px = lerp(flare, -flare, u);
+      const v = (u * waves) % 1;
+      const k = Math.floor(Math.min(u * waves, waves - 0.0001));
+      const swim = 1 + 0.22 * Math.sin(t * 2.2 + k * 1.7);
+      p.lineTo(px, base + amp * Math.sin(v * Math.PI) * swim);
+    }
+    p.bezierCurveTo(-flare, base - ry * 0.3, -W * 1.01, mid + (base - mid) * 0.5, -W, mid);
+    p.closePath();
+    // qo'lchalar
+    const bob = Math.sin(t * 2.2) * ry * 0.05;
+    for (const sd of [1, -1]) {
+      const ax = sd * W * 1.0;
+      const ay = ry * 0.22 + (sd > 0 ? bob : -bob);
+      p.moveTo(ax + sd * rx * 0.2, ay);
+      p.ellipse(ax, ay, rx * 0.2, ry * 0.27, sd * -0.45, 0, Math.PI * 2);
+    }
+    return p;
+  }
+
+  /** Arvohchada yuz tepaga ko'tariladi (bo'yi uzun bo'lgani uchun). */
+  private get faceDY(): number {
+    return this.shape === "ghost" && this.morph < 0.5 ? -0.42 : 0;
+  }
+
   private bodyPath(rx: number, ry: number, R: number): Path2D {
+    if (this.shape === "ghost" && this.morph < 0.005) return this.ghostPath(rx, ry);
     const n = 72;
     const expN = 2.0 / 2.7;
     const tw = R * 1.0;
@@ -1061,7 +1138,7 @@ export class BotEngine {
     x.strokeStyle = ink;
 
     for (const sd of [-1, 1]) {
-      const eyeYaw = sd * EYE_SP + this.yaw;
+      const eyeYaw = sd * (this.shape === "ghost" ? EYE_SP * 1.12 : EYE_SP) + this.yaw;
       // Rolling with an outfit on, the whole body turns: the eyes must not roll again.
       let eyePitch = EYE_P + this.pitch + (this.rigidRoll ? 0 : this.roll);
       eyePitch = (((eyePitch + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
@@ -1069,12 +1146,12 @@ export class BotEngine {
       if (Math.cos(eyeYaw) * cp <= 0.04) continue;
 
       const ex = Math.sin(eyeYaw) * cp * rx;
-      const ey = -Math.sin(eyePitch) * ry + (this.morph > 0 ? ry * 0.14 * this.morph : 0);
+      const ey = -Math.sin(eyePitch) * ry + (this.morph > 0 ? ry * 0.14 * this.morph : 0) + this.faceDY * ry;
       const fx = lerp(Math.max(0.18, Math.cos(eyeYaw)), 1, this.morph * 0.7);
       const fy = lerp(Math.max(0.18, cp), 1, this.morph * 0.7);
-      const eyeMult = this.isMini ? 1.9 : 1.0;
+      const eyeMult = (this.isMini ? 1.9 : 1.0) * (this.shape === "ghost" ? 1.45 : 1);
       const ew = R * EYE_W * this.es * eyeMult;
-      const eh = R * EYE_H * this.es * eyeMult;
+      const eh = R * EYE_H * this.es * eyeMult * (this.shape === "ghost" ? 1.1 : 1);
 
       x.save();
       x.translate(ex, ey);

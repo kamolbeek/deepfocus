@@ -55,7 +55,7 @@ root.setProperty("--mb", `${MB}px`);
 
 // ---------- Ranglar, shakllar, kiyimlar
 export const COLORS: { name: string; hex: string }[] = [
-  { name: "Lavanda", hex: "#A992EA" },
+  { name: "Lavanda", hex: "#C8A5E7" },
   { name: "Anor", hex: "#F08A8A" },
   { name: "Limon", hex: "#F3D27A" },
   { name: "Kivi", hex: "#8CCB7E" },
@@ -64,6 +64,7 @@ export const COLORS: { name: string; hex: string }[] = [
   { name: "Ko'mir", hex: "#3A3A42" },
 ];
 const SHAPES: { id: BodyShape; name: string }[] = [
+  { id: "ghost", name: "Arvohcha" },
   { id: "round", name: "Dumaloq" },
   { id: "square", name: "To'rtburchak" },
   { id: "long", name: "Uzunchoq" },
@@ -110,11 +111,11 @@ function botBox(v: View) {
   const wing = (W - NOTCH) / 2;
   if (v === "open" || v === "look") {
     // panelning chap tomonida katta
-    const d = 150;
+    const d = 136;
     return { x: (460 - W) / 2 + 16 + 64, y: MB + 4 + 66, d };
   }
   const head = Math.min(MB - 7, wing - 12) + (v === "peek" ? 4 : 0);
-  const d = head / 0.66;
+  const d = head / 0.74; // arvohcha: bo'yi uzun, ozgina kichikroq
   const left = (460 - W) / 2;
   return { x: left + wing / 2 + (NOTCH ? 3 : 0), y: MB / 2 + (v === "peek" ? 3 : 1), d };
 }
