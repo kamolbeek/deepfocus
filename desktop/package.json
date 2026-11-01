@@ -1,7 +1,7 @@
 {
   "name": "deepfokus-desktop",
   "productName": "DeepFokus",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "DeepFokus kompanyoni — Mac ish stolida",
   "main": "main.js",
   "private": true,

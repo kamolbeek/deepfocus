@@ -1,6 +1,7 @@
 // Notch'dagi kompanyon: Coucou kabi ixcham orol, kichrayib qoladigan mini holat,
 // kursorga qaraydigan, uxlab-uyg'onadigan, silasa yurakcha bo'ladigan kompanyon va ochiladigan panel.
-import { BotEngine, type BodyShape, type BotEmoteName, type Outfit } from "./buddy/engine";
+import type { BodyShape, Outfit } from "./buddy/engine";
+import { GhostSprite, GHOST_ORIGINAL, ghostReady, type GhostEmote } from "./ghost";
 
 type State = {
   mode: "focus" | "short" | "long";
@@ -56,19 +57,13 @@ root.setProperty("--mb", `${MB}px`);
 // ---------- Ranglar, shakllar, kiyimlar
 export const COLORS: { name: string; hex: string }[] = [
   { name: "Lavanda", hex: "#C8A5E7" },
+  { name: "Asl rangi", hex: GHOST_ORIGINAL },
   { name: "Anor", hex: "#F08A8A" },
   { name: "Limon", hex: "#F3D27A" },
   { name: "Kivi", hex: "#8CCB7E" },
   { name: "Yalpiz", hex: "#8FD4B0" },
   { name: "Paxta", hex: "#F2F0EC" },
   { name: "Ko'mir", hex: "#3A3A42" },
-];
-const SHAPES: { id: BodyShape; name: string }[] = [
-  { id: "ghost", name: "Arvohcha" },
-  { id: "round", name: "Dumaloq" },
-  { id: "square", name: "To'rtburchak" },
-  { id: "long", name: "Uzunchoq" },
-  { id: "cloud", name: "Bulut" },
 ];
 const OUTFITS: { id: Outfit; name: string }[] = [
   { id: "none", name: "Kiyimsiz" },
@@ -82,12 +77,10 @@ const OUTFITS: { id: Outfit; name: string }[] = [
   { id: "scarf", name: "Sharf" },
   { id: "bunnyEars", name: "Quyon quloqlari" },
   { id: "witchHat", name: "Sehrgar shlyapasi" },
-  { id: "pumpkin", name: "Qovoq" },
 ];
-const EMOTES: { id: BotEmoteName | "dizzy" | "roll"; name: string }[] = [
+const EMOTES: { id: GhostEmote | "dizzy" | "roll"; name: string }[] = [
   { id: "love", name: "❤️ Yurak" },
   { id: "happy", name: "Xursand" },
-  { id: "wink", name: "Ko'z qisish" },
   { id: "surprised", name: "Hayron" },
   { id: "proud", name: "⭐ Mag'rur" },
   { id: "yawn", name: "Esnash" },
@@ -101,7 +94,7 @@ const WING_MINI = NOTCH ? 34 : 50;
 type View = "mini" | "compact" | "peek" | "activity" | "open" | "look";
 const width = (v: View) =>
   v === "open" || v === "look" ? 420 : v === "activity" ? Math.max(NOTCH + 2 * 120, 320) : NOTCH + 2 * (v === "mini" ? WING_MINI : v === "peek" ? WING_COMPACT + 8 : WING_COMPACT);
-const height = (v: View) => (v === "open" ? MB + 228 : v === "look" ? MB + 360 : v === "activity" ? MB + 32 : v === "peek" ? MB + 8 : MB);
+const height = (v: View) => (v === "open" ? MB + 228 : v === "look" ? MB + 300 : v === "activity" ? MB + 32 : v === "peek" ? MB + 8 : MB);
 const radius = (v: View) => (v === "open" || v === "look" ? 30 : v === "activity" ? 20 : v === "peek" ? 16 : 12);
 
 // Kompanyon kanvasi: tana kengligi ≈ 0.68 × kanvas
@@ -140,7 +133,7 @@ function setView(v: View) {
 }
 
 // ---------- Kompanyon
-const engine = new BotEngine();
+const engine = new GhostSprite();
 const canvas = $("bot") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
 engine.onDizzy = () => {
@@ -212,12 +205,13 @@ $("back").addEventListener("click", () => setView("open"));
 window.df.onTestOpen(() => setView(q.get("look") ? "look" : "open"));
 
 // ---------- Ko'rinish: kiyim, shakl, rang tugmalari (har biri kichik kompanyon bilan)
-function miniIcon(size: number, setup: (e: BotEngine) => void) {
+function miniIcon(size: number, setup: (e: GhostSprite) => void) {
   const c = document.createElement("canvas");
   const dpr = 2;
   c.width = size * dpr;
   c.height = size * dpr;
-  const e = new BotEngine();
+  const e = new GhostSprite();
+  e.lookX = 0;
   setup(e);
   const g = c.getContext("2d")!;
   return {
@@ -237,29 +231,12 @@ for (const o of OUTFITS) {
   const b = document.createElement("button");
   b.title = o.name;
   b.setAttribute("aria-label", o.name);
-  const ic = miniIcon(40, (e) => {
-    e.setOutfit(o.id, false);
-    e.showAntenna = o.id === "none" || !["crown", "santaHat", "beanie", "partyHat", "witchHat", "pumpkin", "bunnyEars"].includes(o.id);
-  });
+  const ic = miniIcon(40, (e) => e.setOutfit(o.id, false));
   icons.push(ic);
   b.appendChild(ic.c);
   b.addEventListener("click", () => window.df.cmd("look", { outfit: o.id }));
   $("outfits").appendChild(b);
   outfitBtns[o.id] = b;
-}
-const shapeBtns: Record<string, HTMLButtonElement> = {};
-const shapeIcons: Record<string, ReturnType<typeof miniIcon>> = {};
-for (const sh of SHAPES) {
-  const b = document.createElement("button");
-  b.title = sh.name;
-  b.setAttribute("aria-label", sh.name);
-  const ic = miniIcon(34, (e) => (e.shape = sh.id));
-  icons.push(ic);
-  shapeIcons[sh.id] = ic;
-  b.appendChild(ic.c);
-  b.addEventListener("click", () => window.df.cmd("look", { shape: sh.id }));
-  $("shapes").appendChild(b);
-  shapeBtns[sh.id] = b;
 }
 const colorBtns: Record<string, HTMLButtonElement> = {};
 for (const c of COLORS) {
@@ -278,13 +255,14 @@ for (const em of EMOTES) {
   b.addEventListener("click", () => {
     wake();
     if (em.id === "dizzy") engine.onDizzy?.();
-    else if (em.id === "roll") engine.doRoll(950, 1);
+    else if (em.id === "roll") engine.doRoll(950);
     else engine.triggerEmote(em.id, 2.2);
   });
   $("emotes").appendChild(b);
 }
 // ikonkalar kursorga qaramaydi, faqat bir marta chiziladi (va kiyim/rang o'zgarsa)
 const redrawIcons = () => icons.forEach((i) => i.draw());
+ghostReady.then(() => redrawIcons());
 
 // ---------- Uyqu: 5 daqiqa harakatsizlikdan keyin uxlaydi, kursor yaqinlashsa uyg'onadi
 function sleep() {
@@ -324,7 +302,7 @@ window.df.onCursor((c) => {
     if (!pet.active) {
       pet = { active: true, since: now, travel: 0, last: c };
       engine.blink();
-      engine.tgEs = 1.08;
+      engine.tgEs = 1.06;
     } else {
       pet.travel += Math.hypot(c.x - prev.x, c.y - prev.y);
     }
@@ -443,14 +421,12 @@ function render(s: State) {
     const first = !lookKey;
     lookKey = lk;
     engine.setOutfit(s.outfit, !first);
-    engine.shape = s.bodyShape;
     engine.setColor(s.bodyColor);
     root.setProperty("--acc", s.bodyColor);
     for (const ic of icons) {
       ic.e.setColor(s.bodyColor);
     }
     for (const o of OUTFITS) outfitBtns[o.id].classList.toggle("on", o.id === s.outfit);
-    for (const sh of SHAPES) shapeBtns[sh.id].classList.toggle("on", sh.id === s.bodyShape);
     for (const c of COLORS) colorBtns[c.hex].classList.toggle("on", c.hex === s.bodyColor);
     redrawIcons();
   }
@@ -485,17 +461,15 @@ function ambient(now: number) {
   nextAmbient = now + 7000 + Math.random() * 9000;
   if (asleep || engine.state === "dizzy" || engine.state === "finished") return;
   const r = Math.random();
-  if (r < 0.22) engine.triggerEmote("wink", 0.9);
-  else if (r < 0.42) engine.triggerEmote("happy", 1.1);
-  else if (r < 0.56) {
-    engine.anim("oy", [[-0.22, 130, (t) => 1 - Math.pow(1 - t, 3)], [0, 260, (t) => t]]);
-    engine.squash();
-  } else if (r < 0.66) engine.doRoll(900, 1);
-  else if (r < 0.8) {
-    engine.blink();
-    setTimeout(() => engine.blink(), 220);
-  } else if (r < 0.9) engine.triggerEmote("surprised", 0.6);
-  else engine.triggerEmote("love", 1.4);
+  if (r < 0.22) engine.triggerEmote("wink", 1.2);
+  else if (r < 0.42) engine.triggerEmote("happy", 1.4);
+  else if (r < 0.58) {
+    engine.jump();
+    setTimeout(() => engine.squash(), 420);
+  } else if (r < 0.68) engine.doRoll(900);
+  else if (r < 0.82) engine.squash();
+  else if (r < 0.92) engine.triggerEmote("surprised", 1);
+  else engine.triggerEmote("love", 1.6);
 }
 
 // ---------- Chizish sikli
