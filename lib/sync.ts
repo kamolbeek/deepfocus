@@ -17,7 +17,7 @@ import {
 import { collection, doc, getDoc, getDocs, setDoc, writeBatch, type Firestore } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { Session, Settings, Task } from "@/lib/store";
-import { telegram } from "@/lib/telegram";
+import { loadTelegram } from "@/lib/telegram";
 
 export type SyncStatus = "off" | "signed-out" | "syncing" | "synced" | "error";
 export type CloudUser = { uid: string; email: string | null; name: string | null };
@@ -150,9 +150,10 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
     );
     // Telegram ichida: har ochilishda server qaysi hisobga kirishni aytadi
     // (hisob saytdagi Google hisobiga ulangan bo'lsa, o'sha hisob)
-    const w = telegram();
-    if (w) {
-      (async () => {
+    (async () => {
+      const w = await loadTelegram();
+      if (!w) return;
+      {
         try {
           await a.authStateReady();
           const r = await fetch("/api/telegram/auth", {
@@ -171,8 +172,8 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
         } catch (e) {
           console.error("[DeepFokus] Telegram orqali kirish xatosi", e);
         }
-      })();
-    }
+      }
+    })();
     return unsub;
   }, []);
 
@@ -339,8 +340,7 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
 
   const [inTelegram, setInTelegram] = useState(false);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setInTelegram(!!telegram());
+    loadTelegram().then((w) => setInTelegram(!!w));
   }, []);
 
   return {

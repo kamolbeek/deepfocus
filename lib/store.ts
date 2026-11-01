@@ -29,6 +29,7 @@ export type Settings = {
   scene: string; // kompanyon ortidagi sahna
   owned: string[]; // sotib olingan sahnalar
   reminders: boolean; // Telegram eslatmalari
+  method: string; // samaradorlik usuli ("custom" — o'zi sozlagan)
 };
 
 export type AccentId = "violet" | "blue" | "green" | "pink" | "orange";
@@ -52,6 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   scene: "plain",
   owned: [],
   reminders: true,
+  method: "pomodoro",
 };
 
 function read<T>(key: string, fallback: T): T {

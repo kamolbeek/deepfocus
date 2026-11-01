@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { openPip, pipSupported } from "@/lib/pip";
 import Companion from "@/components/Companion";
 import type { Mood } from "@/lib/companion-engine";
 import {
@@ -32,6 +34,7 @@ import {
   CloudIcon,
   MailIcon,
   GoogleIcon,
+  PipIcon,
   CoinIcon,
   PawIcon,
   LockIcon,
@@ -41,6 +44,7 @@ import { useCloudSync, type CloudUser, type SyncStatus } from "@/lib/sync";
 import { haptic, initTelegram } from "@/lib/telegram";
 import { GOAL_BONUS, progressOf } from "@/lib/progress";
 import { SCENES, sceneById } from "@/lib/scenes";
+import { ACTIVITY_LABEL, METHODS, methodById, type Activity } from "@/lib/methods";
 
 type Mode = "focus" | "short" | "long";
 type Tab = "timer" | "tasks" | "pet" | "stats" | "me";
@@ -85,14 +89,15 @@ const BUBBLES: Record<Mood, string> = {
 };
 const RING = 2 * Math.PI * 114;
 
-function chime() {
+// short = Tabata raundlari orasidagi qisqa signal
+function chime(short = false) {
   try {
     const Ctx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext })
         .webkitAudioContext;
     const ctx = new Ctx();
-    [523.25, 659.25, 783.99].forEach((f, i) => {
+    (short ? [880] : [523.25, 659.25, 783.99]).forEach((f, i) => {
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       o.type = "sine";
@@ -145,15 +150,31 @@ export default function App() {
     null,
   );
   const [tab, setTab] = useState<Tab>("timer");
+  const [showMethods, setShowMethods] = useState(false);
+  const [canPip] = useState(() => pipSupported());
+  const [pipWin, setPipWin] = useState<Window | null>(null);
+
+  // Usul: soniyali (Tabata), o'sib boruvchi (Flowtime) yoki daqiqali
+  const method = methodById(settings.method);
+  const secMode = method?.unit === "sec";
+  const flow = !!method?.flow;
+  const plan = secMode && method ? method : settings;
+  const unitMs = secMode ? 1000 : 60_000;
+  const labels = method?.labels ?? MODE_LABEL;
+  const [flowBreak, setFlowBreak] = useState(5 * 60_000);
+  const [flowAcc, setFlowAcc] = useState(0);
+  const [startAt, setStartAt] = useState(0);
 
   const dur = useCallback(
     (m: Mode) =>
-      (m === "focus"
-        ? settings.focus
+      m === "focus"
+        ? plan.focus * unitMs
         : m === "short"
-          ? settings.short
-          : settings.long) * 60_000,
-    [settings],
+          ? flow
+            ? flowBreak
+            : plan.short * unitMs
+          : plan.long * unitMs,
+    [plan, unitMs, flow, flowBreak],
   );
   const [mode, setMode] = useState<Mode>("focus");
   const [running, setRunning] = useState(false);
@@ -182,8 +203,10 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  const left = running ? Math.max(0, endAt - now) : remaining;
-  const total = dur(mode);
+  const flowing = flow && mode === "focus";
+  const elapsed = flowAcc + (running && flowing ? now - startAt : 0);
+  const left = flowing ? elapsed : running ? Math.max(0, endAt - now) : remaining;
+  const total = flowing ? 60 * 60_000 : dur(mode);
   const today = todaySessions(sessions);
   const streak = streakOf(sessions);
   const progress = useMemo(
@@ -203,56 +226,91 @@ export default function App() {
     [dur],
   );
 
+  // Bitta fokus sessiyasini yozib, tanga va bayramni ko'rsatish
+  const record = useCallback(
+    (minutes: number) => {
+      const t = Date.now();
+      setLastReward(minutes + (today.length + 1 === settings.dailyGoal ? GOAL_BONUS : 0));
+      setSessions((s) => [...s, { id: `s${t}`, at: t, minutes, taskId: activeTask?.id }]);
+      if (activeTask)
+        setTasks((ts) => ts.map((x) => (x.id === activeTask.id ? { ...x, done: x.done + 1 } : x)));
+      setCelebrateUntil(t + 6000);
+    },
+    [today.length, settings.dailyGoal, activeTask, setSessions, setTasks],
+  );
+
+  // Soniyali usulda keyingi bosqich o'zi boshlanadi
+  const autoStart = useCallback(
+    (m: Mode) => {
+      setMode(m);
+      setRemaining(dur(m));
+      setEndAt(Date.now() + dur(m));
+      setRunning(true);
+    },
+    [dur],
+  );
+
   const complete = useCallback(() => {
-    const t = Date.now();
-    if (settings.sound) chime();
+    if (settings.sound) chime(secMode && mode !== "long");
     haptic.success();
     if (mode === "focus") {
-      setLastReward(
-        settings.focus +
-          (today.length + 1 === settings.dailyGoal ? GOAL_BONUS : 0),
-      );
-      setSessions((s) => [
-        ...s,
-        { id: `s${t}`, at: t, minutes: settings.focus, taskId: activeTask?.id },
-      ]);
-      if (activeTask)
-        setTasks((ts) =>
-          ts.map((x) =>
-            x.id === activeTask.id ? { ...x, done: x.done + 1 } : x,
-          ),
-        );
       const c = cycle + 1;
       setCycle(c);
-      setCelebrateUntil(t + 6000);
-      switchMode(c % settings.longEvery === 0 ? "long" : "short");
+      if (secMode) {
+        if (c % plan.longEvery === 0) {
+          record(Math.max(1, Math.round((plan.focus * plan.longEvery) / 60)));
+          autoStart("long");
+        } else autoStart("short");
+        return;
+      }
+      record(plan.focus);
+      switchMode(c % plan.longEvery === 0 ? "long" : "short");
+    } else if (secMode && mode === "short") {
+      autoStart("focus");
     } else {
       switchMode("focus");
     }
-  }, [
-    mode,
-    settings,
-    activeTask,
-    cycle,
-    today.length,
-    setSessions,
-    setTasks,
-    switchMode,
-  ]);
+  }, [mode, settings.sound, secMode, cycle, plan, record, autoStart, switchMode]);
+
+  // Flowtime: ishni tugatib, tanaffusni ishning 1/5 qismi qilib hisoblash
+  const finishFlow = () => {
+    const spent = flowAcc + (running ? Date.now() - startAt : 0);
+    setFlowAcc(0);
+    setRunning(false);
+    if (spent < 60_000) return;
+    record(Math.round(spent / 60_000));
+    if (settings.sound) chime();
+    haptic.success();
+    const br = Math.min(30, Math.max(1, Math.round(spent / 5 / 60_000))) * 60_000;
+    setFlowBreak(br);
+    setMode("short");
+    setRemaining(br);
+  };
 
   useEffect(() => {
     // taymer nolga yetganda sessiyani yakunlash (tashqi vaqt manbasiga reaksiya)
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (running && left <= 0) complete();
-  }, [running, left, complete]);
+    if (running && !flowing && left <= 0) complete();
+  }, [running, flowing, left, complete]);
 
   useEffect(() => {
     document.title = running
-      ? `${fmt(left)} · ${MODE_LABEL[mode]} — DeepFokus`
+      ? `${fmt(left)} · ${labels[mode]} — DeepFokus`
       : "DeepFokus";
-  }, [running, left, mode]);
+  }, [running, left, mode, labels]);
 
   const toggle = () => {
+    if (flowing) {
+      if (running) {
+        setFlowAcc((a) => a + Date.now() - startAt);
+        setRunning(false);
+      } else {
+        setStartAt(Date.now());
+        setRunning(true);
+        haptic.start();
+      }
+      return;
+    }
     if (running) {
       setRemaining(Math.max(0, endAt - Date.now()));
       setRunning(false);
@@ -264,7 +322,9 @@ export default function App() {
   };
   const reset = () => {
     setRunning(false);
-    setRemaining(total);
+    setFlowAcc(0);
+    setCycle(0);
+    setRemaining(dur(mode));
   };
 
   const mood: Mood = useMemo(() => {
@@ -289,6 +349,29 @@ export default function App() {
     settings.dailyGoal,
   ]);
 
+  const togglePip = async () => {
+    if (pipWin) {
+      pipWin.close();
+      return;
+    }
+    try {
+      const w = await openPip(300, 400);
+      if (!w) return;
+      w.addEventListener("pagehide", () => setPipWin(null));
+      setPipWin(w);
+    } catch (e) {
+      console.error("[DeepFokus] suzuvchi oyna ochilmadi", e);
+    }
+  };
+
+  // Suzuvchi oyna ochiq bo'lsa, vaqtni o'sha oynaning taymeri bilan yangilaymiz:
+  // asosiy sahifa orqada qolganda brauzer uning taymerlarini sekinlashtiradi
+  useEffect(() => {
+    if (!pipWin) return;
+    const id = pipWin.setInterval(() => setNow(Date.now()), 250);
+    return () => pipWin.clearInterval(id);
+  }, [pipWin]);
+
   const onPoke = () => {
     const t = Date.now();
     pokes.current = pokes.current.filter((p) => t - p < 2000).concat(t);
@@ -302,7 +385,7 @@ export default function App() {
   const dateLabel = `${WEEKDAYS[d.getDay()]}, ${d.getDate()}-${MONTHS[d.getMonth()]}`;
   const startLabel = running
     ? "Pauza"
-    : remaining < total && remaining > 0
+    : (flowing ? elapsed > 0 : remaining < total && remaining > 0)
       ? "Davom ettirish"
       : "Boshlash";
 
@@ -373,27 +456,20 @@ export default function App() {
               <ChevronIcon className="h-[18px] w-[18px] text-[#8E8E93]" />
             </button>
 
-            <div
-              role="group"
-              aria-label="Rejim"
-              className="grid grid-cols-3 gap-0.5 rounded-[10px] bg-[#E8E8ED] p-0.5"
+            <button
+              type="button"
+              onClick={() => setShowMethods(true)}
+              className="flex min-h-11 items-center gap-2.5 rounded-[14px] bg-white px-3.5 py-2 text-left shadow-[0_1px_2px_rgba(0,0,0,.05)]"
             >
-              {(["focus", "short", "long"] as Mode[]).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={mode === m}
-                  onClick={() => switchMode(m)}
-                  className={`min-h-9 rounded-lg px-1 text-[13px] transition ${
-                    mode === m
-                      ? "bg-white font-semibold shadow-[0_1px_3px_rgba(0,0,0,.12)]"
-                      : "font-medium text-[#3C3C43]"
-                  }`}
-                >
-                  {MODE_LABEL[m]}
-                </button>
-              ))}
-            </div>
+              <span className="text-[13px] font-semibold uppercase tracking-[0.3px] text-[#6E6E73]">Usul</span>
+              <span className="flex-1 text-[15px] font-semibold">
+                {method?.name ?? "Maxsus"}{" "}
+                <span className="font-medium text-[#6E6E73]">
+                  · {method?.badge ?? `${settings.focus} / ${settings.short}`}
+                </span>
+              </span>
+              <span className="text-[13px] font-semibold text-(--accent)">O&apos;zgartirish</span>
+            </button>
 
             <div className="relative mx-auto flex h-[256px] w-[256px] items-center justify-center">
               <svg
@@ -420,7 +496,7 @@ export default function App() {
                   strokeWidth="10"
                   strokeLinecap="round"
                   strokeDasharray={RING}
-                  strokeDashoffset={RING * (1 - left / total)}
+                  strokeDashoffset={RING * (1 - Math.min(1, left / total))}
                   transform="rotate(-90 128 128)"
                   style={{ transition: "stroke-dashoffset .25s linear" }}
                 />
@@ -430,7 +506,15 @@ export default function App() {
                   {fmt(left)}
                 </span>
                 <span className="text-[15px] font-medium text-[#6E6E73]">
-                  {mode === "focus" ? "Fokus vaqti" : "Tanaffus"}
+                  {flowing
+                    ? running
+                      ? "Oqimdasiz"
+                      : "Erkin fokus"
+                    : secMode
+                      ? `${labels[mode]} · ${Math.min(plan.longEvery, (cycle % plan.longEvery) + (mode === "focus" ? 1 : 0)) || plan.longEvery} / ${plan.longEvery} raund`
+                      : mode === "focus"
+                        ? "Fokus vaqti"
+                        : labels[mode]}
                 </span>
               </div>
             </div>
@@ -439,6 +523,16 @@ export default function App() {
               className={`relative flex items-end gap-2 ${scene.id === "plain" ? "" : "rounded-[22px] px-2 pt-1"}`}
               style={scene.style}
             >
+              {canPip && (
+                <button
+                  type="button"
+                  onClick={togglePip}
+                  className="absolute right-1 top-1 z-10 flex min-h-8 items-center gap-1.5 rounded-full bg-white/90 px-2.5 text-[12px] font-semibold text-[#3C3C43] shadow-sm"
+                >
+                  <PipIcon className="h-4 w-4" />
+                  {pipWin ? "Oynani yopish" : "Ekran ustiga"}
+                </button>
+              )}
               {now < celebrateUntil && mode !== "focus" && (
                 <span className="df-coin pointer-events-none absolute left-16 top-0 z-10 flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[14px] font-bold shadow-md">
                   <CoinIcon className="h-4 w-4" />+{lastReward}
@@ -452,7 +546,11 @@ export default function App() {
               />
               <div className="mb-6 flex-1 rounded-2xl rounded-bl-[4px] bg-white px-3.5 py-2.5 text-[14px] leading-snug shadow-[0_1px_2px_rgba(0,0,0,.05)]">
                 {mood === "wait"
-                  ? `Seni kutyapman. ${settings.focus} daqiqa, keyin choy?`
+                  ? flow
+                    ? "Boshla, charchaguningcha birga ishlaymiz."
+                    : secMode
+                      ? "Tayyormisan? 8 raund, hammasi 4 daqiqa!"
+                      : `Seni kutyapman. ${plan.focus} daqiqa, keyin choy?`
                   : BUBBLES[mood]}
               </div>
             </div>
@@ -475,14 +573,25 @@ export default function App() {
               >
                 {startLabel}
               </button>
-              <button
-                type="button"
-                aria-label="Keyingi rejimga o'tish"
-                onClick={() => switchMode(mode === "focus" ? "short" : "focus")}
-                className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#E8E8ED]"
-              >
-                <SkipIcon className="h-[22px] w-[22px]" />
-              </button>
+              {flowing ? (
+                <button
+                  type="button"
+                  onClick={finishFlow}
+                  disabled={elapsed < 60_000}
+                  className="flex h-[52px] min-w-[52px] items-center justify-center rounded-full bg-[#E8E8ED] px-3 text-[13px] font-semibold disabled:opacity-40"
+                >
+                  Tanaffus
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Keyingi rejimga o'tish"
+                  onClick={() => switchMode(mode === "focus" ? "short" : "focus")}
+                  className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#E8E8ED]"
+                >
+                  <SkipIcon className="h-[22px] w-[22px]" />
+                </button>
+              )}
             </div>
 
             <div
@@ -516,6 +625,31 @@ export default function App() {
           />
         )}
 
+        {showMethods && (
+          <MethodSheet
+            current={settings.method}
+            onClose={() => setShowMethods(false)}
+            onPick={(id) => {
+              const m = methodById(id);
+              if (!m) return;
+              setRunning(false);
+              setMode("focus");
+              setCycle(0);
+              setFlowAcc(0);
+              setSettings((s) => ({
+                ...DEFAULT_SETTINGS,
+                ...s,
+                method: id,
+                ...(m.unit === "min" && !m.flow
+                  ? { focus: m.focus, short: m.short, long: m.long, longEvery: m.longEvery }
+                  : {}),
+              }));
+              haptic.select();
+              setShowMethods(false);
+            }}
+          />
+        )}
+
         {tab === "pet" && (
           <PetView
             progress={progress}
@@ -533,6 +667,71 @@ export default function App() {
           </>
         )}
       </main>
+
+      {pipWin &&
+        createPortal(
+          <div
+            className="flex h-dvh flex-col overflow-hidden text-[#1D1D1F]"
+            style={{ "--accent": accent.main, "--accent-soft": accent.soft, ...(scene.id === "plain" ? {} : scene.style) } as React.CSSProperties}
+          >
+            <div className="flex items-center justify-between px-3.5 pt-3">
+              <span className="rounded-full bg-white/85 px-2.5 py-1 text-[12px] font-semibold">
+                {method?.name ?? "Maxsus"}
+              </span>
+              <span className="flex items-center gap-1 rounded-full bg-white/85 px-2.5 py-1 text-[12px] font-bold">
+                <CoinIcon className="h-3.5 w-3.5" />
+                {progress.coins}
+              </span>
+            </div>
+            <div className="relative flex flex-1 items-end justify-center">
+              {now < celebrateUntil && mode !== "focus" && (
+                <span className="df-coin absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[14px] font-bold shadow-md">
+                  <CoinIcon className="h-4 w-4" />+{lastReward}
+                </span>
+              )}
+              <Companion mood={mood} onPoke={onPoke} className="h-full max-h-[190px] w-[170px]" heightFrac={0.86} />
+            </div>
+            <div className="mx-3 mb-3 rounded-[20px] bg-white/92 px-3 pb-3 pt-2 text-center shadow-[0_1px_3px_rgba(0,0,0,.08)]">
+              <div className="text-[44px] font-semibold leading-none tracking-[-2px] tabular-nums">{fmt(left)}</div>
+              <div className="mt-1 text-[13px] font-medium text-[#6E6E73]">
+                {flowing ? (running ? "Oqimdasiz" : "Erkin fokus") : mode === "focus" ? labels.focus : labels[mode]}
+                {activeTask ? ` · ${activeTask.title}` : ""}
+              </div>
+              <div className="mt-2.5 flex items-center justify-center gap-2.5">
+                <button type="button" aria-label="Qaytadan boshlash" onClick={reset} className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8E8ED]">
+                  <ResetIcon className="h-[18px] w-[18px]" />
+                </button>
+                <button
+                  type="button"
+                  onClick={toggle}
+                  className={`h-11 min-w-[112px] rounded-full px-5 text-[15px] font-semibold text-white ${running ? "bg-[#1D1D1F]" : "bg-(--accent)"}`}
+                >
+                  {startLabel}
+                </button>
+                {flowing ? (
+                  <button
+                    type="button"
+                    onClick={finishFlow}
+                    disabled={elapsed < 60_000}
+                    className="h-10 rounded-full bg-[#E8E8ED] px-3 text-[12px] font-semibold disabled:opacity-40"
+                  >
+                    Tanaffus
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label="Keyingi rejimga o'tish"
+                    onClick={() => switchMode(mode === "focus" ? "short" : "focus")}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8E8ED]"
+                  >
+                    <SkipIcon className="h-[18px] w-[18px]" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>,
+          pipWin.document.body,
+        )}
 
       <nav
         aria-label="Asosiy menyu"
@@ -1114,6 +1313,8 @@ function SettingsView({
   settings: Settings;
   setSettings: (f: (s: Settings) => Settings) => void;
 }) {
+  const setTimer = (k: "focus" | "short" | "long" | "longEvery", v: number) =>
+    setSettings((s) => ({ ...DEFAULT_SETTINGS, ...s, [k]: v, method: "custom" }));
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) =>
     setSettings((s) => ({ ...DEFAULT_SETTINGS, ...s, [k]: v }));
   const divider = <div className="ml-4 h-px bg-[#E5E5EA]" />;
@@ -1134,7 +1335,7 @@ function SettingsView({
           max={120}
           step={5}
           unit="daq"
-          onChange={(v) => set("focus", v)}
+          onChange={(v) => setTimer("focus", v)}
         />
         {divider}
         <Stepper
@@ -1143,7 +1344,7 @@ function SettingsView({
           min={1}
           max={30}
           unit="daq"
-          onChange={(v) => set("short", v)}
+          onChange={(v) => setTimer("short", v)}
         />
         {divider}
         <Stepper
@@ -1153,7 +1354,7 @@ function SettingsView({
           max={60}
           step={5}
           unit="daq"
-          onChange={(v) => set("long", v)}
+          onChange={(v) => setTimer("long", v)}
         />
         {divider}
         <Stepper
@@ -1162,7 +1363,7 @@ function SettingsView({
           min={2}
           max={8}
           unit="sprint"
-          onChange={(v) => set("longEvery", v)}
+          onChange={(v) => setTimer("longEvery", v)}
         />
         {divider}
         <Stepper
@@ -1401,5 +1602,109 @@ function PetView({
         })}
       </div>
     </>
+  );
+}
+
+function MethodSheet({
+  current,
+  onPick,
+  onClose,
+}: {
+  current: string;
+  onPick: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [filter, setFilter] = useState<Activity | "all">("all");
+  const list = METHODS.filter((m) => filter === "all" || m.best.includes(filter));
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-center bg-black/30" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Usulni tanlang"
+        onClick={(e) => e.stopPropagation()}
+        className="mt-10 flex w-full max-w-[440px] flex-col overflow-hidden rounded-t-[28px] bg-[#F5F5F7]"
+      >
+        <div className="flex items-center justify-between px-5 pb-2 pt-5">
+          <h2 className="text-[26px] font-bold tracking-[-0.6px]">Usulni tanlang</h2>
+          <button type="button" onClick={onClose} className="min-h-10 rounded-full bg-[#E8E8ED] px-4 text-[15px] font-semibold">
+            Yopish
+          </button>
+        </div>
+        <p className="px-5 text-[14px] leading-snug text-[#6E6E73]">
+          Dars uchun 50 / 10, ofis ishiga 52 / 17, kod va ijodga 90 daqiqa yoki Flowtime, sportga Tabata. Boshlay
+          olmayotgan bo&apos;lsangiz, 10 daqiqadan boshlang.
+        </p>
+        <div className="flex gap-2 overflow-x-auto px-5 py-3" role="group" aria-label="Faoliyat">
+          {(["all", "dars", "ish", "ijod", "sport"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
+              className={`min-h-9 shrink-0 rounded-full px-3.5 text-[14px] font-semibold ${
+                filter === f ? "bg-(--accent) text-white" : "bg-white text-[#3C3C43]"
+              }`}
+            >
+              {f === "all" ? "Hammasi" : ACTIVITY_LABEL[f]}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom),24px)]">
+          {list.map((m) => {
+            const active = current === m.id;
+            return (
+              <section key={m.id} className={`rounded-[20px] bg-white p-4 ${active ? "ring-2 ring-(--accent)" : ""}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-baseline gap-2">
+                    <h3 className="text-[19px] font-bold tracking-[-0.3px]">{m.name}</h3>
+                    <span className="rounded-full bg-(--accent-soft) px-2 py-0.5 text-[12px] font-semibold text-(--accent)">
+                      {m.badge}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onPick(m.id)}
+                    className={`min-h-9 shrink-0 rounded-full px-4 text-[14px] font-semibold ${
+                      active ? "bg-[#E8E8ED] text-[#3C3C43]" : "bg-(--accent) text-white"
+                    }`}
+                  >
+                    {active ? "Tanlangan" : "Tanlash"}
+                  </button>
+                </div>
+                <p className="mt-2 text-[15px] leading-snug">{m.rule}</p>
+                <p className="mt-2 text-[14px] leading-snug text-[#6E6E73]">
+                  <span className="font-semibold text-[#3C3C43]">Qachon: </span>
+                  {m.bestText}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {m.best.map((a) => (
+                    <span key={a} className="rounded-full bg-[#F2F2F7] px-2.5 py-1 text-[12px] font-semibold text-[#3C3C43]">
+                      {ACTIVITY_LABEL[a]}
+                    </span>
+                  ))}
+                </div>
+                <details className="group mt-2">
+                  <summary className="min-h-9 cursor-pointer list-none py-1.5 text-[14px] font-semibold text-(--accent)">
+                    Qanday qilinadi?
+                  </summary>
+                  <ol className="mt-1 flex list-decimal flex-col gap-1.5 pl-5 text-[14px] leading-snug text-[#3C3C43]">
+                    {m.steps.map((st) => (
+                      <li key={st}>{st}</li>
+                    ))}
+                  </ol>
+                </details>
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }

@@ -17,14 +17,36 @@ type WebApp = {
   };
 };
 
+// Telegram ilovani ochganda manzilga #tgWebAppData=... qo'shadi
+const launchedInTelegram =
+  typeof window !== "undefined" && /tgWebApp(Data|Version|Platform)/.test(window.location.hash + window.location.search);
+
+let loading: Promise<WebApp | null> | null = null;
+
+// Telegram skriptini faqat Telegram ichida yuklaymiz: oddiy saytni sekinlashtirmasin
+export function loadTelegram(): Promise<WebApp | null> {
+  if (!launchedInTelegram) return Promise.resolve(null);
+  if (telegram()) return Promise.resolve(telegram());
+  loading ??= new Promise((resolve) => {
+    const s = document.createElement("script");
+    s.src = "https://telegram.org/js/telegram-web-app.js";
+    s.async = true;
+    s.onload = () => resolve(telegram());
+    s.onerror = () => resolve(null);
+    document.head.appendChild(s);
+    setTimeout(() => resolve(telegram()), 8000);
+  });
+  return loading;
+}
+
 export function telegram(): WebApp | null {
   if (typeof window === "undefined") return null;
   const w = (window as unknown as { Telegram?: { WebApp?: WebApp } }).Telegram?.WebApp;
   return w && w.initData ? w : null;
 }
 
-export function initTelegram() {
-  const w = telegram();
+export async function initTelegram() {
+  const w = await loadTelegram();
   if (!w) return false;
   try {
     w.ready();

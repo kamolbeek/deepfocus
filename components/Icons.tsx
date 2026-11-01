@@ -133,3 +133,9 @@ export const LockIcon = ({ className }: P) => (
     <path d="M8 11V8a4 4 0 0 1 8 0v3" />
   </svg>
 );
+export const PipIcon = ({ className }: P) => (
+  <svg {...base} className={className}>
+    <rect x="3" y="4" width="18" height="15" rx="2.5" />
+    <rect x="12" y="11" width="7" height="6" rx="1.2" fill="currentColor" stroke="none" />
+  </svg>
+);

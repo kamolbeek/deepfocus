@@ -142,6 +142,9 @@ export type CompanionOptions = {
 export function createCompanion(opts: CompanionOptions) {
   const base = opts.base ?? "/companion/";
   const glc = opts.gl;
+  // Kompanyon suzuvchi oynada (Picture-in-Picture) ham ishlashi uchun
+  // o'sha oynaning o'z animatsiya va o'lcham API'laridan foydalanamiz
+  const win = (glc.ownerDocument.defaultView ?? window) as Window & typeof globalThis;
   const gl = glc.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: true });
   const lctx = opts.lids.getContext("2d")!;
   const kctx = opts.back.getContext("2d")!;
@@ -265,7 +268,7 @@ export function createCompanion(opts: CompanionOptions) {
 
   function resize() {
     const r = glc.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(2, win.devicePixelRatio || 1);
     for (const c of [glc, opts.lids, opts.back]) {
       c.width = Math.max(1, Math.round(r.width * dpr));
       c.height = Math.max(1, Math.round(r.height * dpr));
@@ -301,7 +304,7 @@ export function createCompanion(opts: CompanionOptions) {
 
   function frame(now: number) {
     if (!alive) return;
-    raf = requestAnimationFrame(frame);
+    raf = win.requestAnimationFrame(frame);
     const t = tex[mood];
     if (!t) return;
     const def = MOODS.find((m) => m.id === mood)!;
@@ -413,10 +416,10 @@ export function createCompanion(opts: CompanionOptions) {
     });
   }
 
-  const ro = new ResizeObserver(resize);
+  const ro = new win.ResizeObserver(resize);
   ro.observe(glc);
   resize();
-  raf = requestAnimationFrame(frame);
+  raf = win.requestAnimationFrame(frame);
   // birinchi navbatda asosiy holat, keyin qolganlari fonda
   ensure("idle").then(() => {
     fit();
@@ -437,7 +440,7 @@ export function createCompanion(opts: CompanionOptions) {
     },
     destroy() {
       alive = false;
-      cancelAnimationFrame(raf);
+      win.cancelAnimationFrame(raf);
       ro.disconnect();
     },
   };
