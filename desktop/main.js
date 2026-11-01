@@ -733,6 +733,9 @@ async function askMomiq(text, files = []) {
   });
   p.on("close", (code) => {
     clearTimeout(killer);
+    const AUTH = /failed to authenticate|oauth|not logged in|please run \/login|invalid api key|unauthorized/i;
+    if (AUTH.test(out) || AUTH.test(err))
+      return finish("Claude Code'ga kirish muddati tugagan. Terminalni ochib `claude` deb yozing, keyin `/login` orqali Claude obunangiz bilan qayta kiring. Shundan keyin menga yana yozing 👻", true);
     if (out.trim() && (code === 0 || !/error/i.test(out.slice(0, 40)))) {
       chatContinue = true;
       return finish(out.trim());
