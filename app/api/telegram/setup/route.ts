@@ -1,5 +1,4 @@
-import { cert, getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { checkServiceAccount } from "@/lib/firebase-server";
 import { safeEqual, tg } from "@/lib/telegram-server";
 
 // Botni bir marta sozlash: webhook, menyu tugmasi, buyruqlar va tavsif.
@@ -11,22 +10,8 @@ export async function GET(request: Request) {
 
   // ?check=admin — Firebase kaliti to'g'ri ishlayotganini tekshirish (hech narsani o'zgartirmaydi)
   if (url.searchParams.get("check") === "admin") {
-    try {
-      const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n") ?? "";
-      const app =
-        getApps()[0] ??
-        initializeApp({
-          credential: cert({
-            projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-            privateKey,
-          }),
-        });
-      const list = await getAuth(app).listUsers(1);
-      return Response.json({ ok: true, users: list.users.length });
-    } catch (e) {
-      return Response.json({ ok: false, error: (e as Error).message.slice(0, 200) }, { status: 500 });
-    }
+    const r = await checkServiceAccount();
+    return Response.json(r, { status: r.ok ? 200 : 500 });
   }
 
   const origin = `${url.protocol}//${url.host}`;

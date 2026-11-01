@@ -10,6 +10,7 @@ import {
   signInWithPopup,
   signInWithCustomToken,
   signInWithRedirect,
+  updateProfile,
   signOut as fbSignOut,
   type User,
 } from "firebase/auth";
@@ -154,7 +155,14 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
           body: JSON.stringify({ initData: w.initData }),
         })
           .then((r) => (r.ok ? r.json() : null))
-          .then((d: { token?: string } | null) => (d?.token ? signInWithCustomToken(a, d.token) : null))
+          .then(async (d: { token?: string; name?: string } | null) => {
+            if (!d?.token) return;
+            const cred = await signInWithCustomToken(a, d.token);
+            if (d.name && cred.user.displayName !== d.name) {
+              await updateProfile(cred.user, { displayName: d.name });
+              setUser({ uid: cred.user.uid, email: cred.user.email, name: d.name });
+            }
+          })
           .catch((e) => console.error("[DeepFokus] Telegram orqali kirish xatosi", e));
       }
     });
