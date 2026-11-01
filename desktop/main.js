@@ -661,8 +661,8 @@ function openChat() {
   if (!alive(chatWin)) {
     chatWin = new BrowserWindow({
       width: W, height: H, x: Math.round(x), y: Math.round(y),
-      frame: false, transparent: true, resizable: false, hasShadow: true,
-      skipTaskbar: true, fullscreenable: false, show: false, backgroundColor: "#00000000",
+      frame: false, transparent: false, resizable: false, hasShadow: true, roundedCorners: true,
+      skipTaskbar: true, fullscreenable: false, show: false, backgroundColor: "#121214",
       webPreferences: commonPrefs(),
     });
     chatWin.setAlwaysOnTop(true, "floating");
@@ -719,7 +719,8 @@ async function askMomiq(text, files = []) {
   let err = "";
   let p;
   try {
-    p = spawn(claude, args, { cwd: dir, env: { ...process.env, PATH } });
+    // stdin yopiq: aks holda Claude Code kirish kutib, ogohlantirish beradi
+    p = spawn(claude, args, { cwd: dir, env: { ...process.env, PATH }, stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) {
     return finish(`Claude Code'ni ishga tushirib bo'lmadi: ${e.message}`, true);
   }
@@ -732,11 +733,16 @@ async function askMomiq(text, files = []) {
   });
   p.on("close", (code) => {
     clearTimeout(killer);
-    if (code === 0 && out.trim()) {
+    if (out.trim() && (code === 0 || !/error/i.test(out.slice(0, 40)))) {
       chatContinue = true;
       return finish(out.trim());
     }
-    const msg = (err || out).trim();
+    // ogohlantirish qatorlarini olib tashlaymiz, faqat haqiqiy xato qoladi
+    const msg = (err || out)
+      .split("\n")
+      .filter((l) => l.trim() && !/^warning:|no stdin data/i.test(l.trim()))
+      .join("\n")
+      .trim();
     if (/log ?in|auth|credential|api key|unauthor/i.test(msg))
       return finish("Claude Code'ga kirilmagan. Terminalda `claude` ni ishga tushirib, /login orqali Claude obunangiz bilan kiring.", true);
     finish(msg ? `Xato: ${msg.slice(0, 600)}` : "Javob kelmadi, qaytadan urinib ko'ring.", true);
