@@ -31,6 +31,9 @@ declare global {
       onArrive: (cb: () => void) => void;
       resizeStart: () => void;
       resizeEnd: () => void;
+      pathsFor: (files: FileList | File[]) => string[];
+      fileIcon: (p: string) => Promise<string>;
+      chatFiles: (paths: string[]) => void;
       cmd: (c: string, arg?: unknown) => void;
       poke: () => void;
       interactive: (on: boolean) => void;
@@ -158,6 +161,78 @@ window.df.onArrive(() => {
   engine?.poke();
 });
 
+// ---------- Fayl yutish: faylni kompanyon ustiga olib kelsa og'zi ochiladi, tashlasa yutib yuboradi
+let dragDepth = 0;
+let feedTimer = 0;
+function setFeed(m: Mood | null) {
+  feedMood = m;
+  render();
+}
+window.addEventListener("dragenter", (e) => {
+  e.preventDefault();
+  dragDepth++;
+  clearTimeout(feedTimer);
+  stage.classList.add("hungry");
+  setFeed("surprised");
+});
+window.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+});
+window.addEventListener("dragleave", () => {
+  if (--dragDepth > 0) return;
+  dragDepth = 0;
+  stage.classList.remove("hungry");
+  setFeed(null);
+});
+window.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  const files = Array.from(e.dataTransfer?.files ?? []);
+  const paths = window.df.pathsFor(files);
+  if (!paths.length) {
+    stage.classList.remove("hungry");
+    setFeed(null);
+    return;
+  }
+  // og'iz qayerda: kompanyon kanvasining o'rtasidan sal pastroq
+  const r = stage.getBoundingClientRect();
+  const mx = r.left + r.width * 0.5;
+  const my = r.top + r.height * 0.56;
+  const shown = paths.slice(0, 4);
+  await Promise.all(
+    shown.map(async (p, i) => {
+      const f = files[i];
+      const el = document.createElement("img");
+      el.className = "food";
+      el.src = f && f.type.startsWith("image/") ? URL.createObjectURL(f) : await window.df.fileIcon(p);
+      const x0 = e.clientX + i * 10;
+      const y0 = e.clientY + i * 6;
+      el.style.left = `${x0}px`;
+      el.style.top = `${y0}px`;
+      document.body.appendChild(el);
+      const a = el.animate(
+        [
+          { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+          { transform: `translate(calc(-50% + ${(mx - x0) * 0.6}px), calc(-50% + ${(my - y0) * 0.6}px)) scale(.55)`, opacity: 1, offset: 0.55 },
+          { transform: `translate(calc(-50% + ${mx - x0}px), calc(-50% + ${my - y0}px)) scale(.06)`, opacity: 0 },
+        ],
+        { duration: 650 + i * 90, easing: "cubic-bezier(.5,0,.7,1)", fill: "forwards" },
+      );
+      await a.finished.catch(() => {});
+      el.remove();
+    }),
+  );
+  stage.classList.remove("hungry");
+  stage.classList.remove("gulp");
+  void stage.offsetWidth;
+  stage.classList.add("gulp");
+  engine?.poke();
+  setFeed("happy");
+  feedTimer = window.setTimeout(() => setFeed(null), 2200);
+  window.df.chatFiles(paths);
+});
+
 // ---------- Kattalashtirish dastagi
 let resizingNow = false;
 const grip = $("grip");
@@ -229,9 +304,11 @@ function moodOf(s: State): Mood {
 }
 
 let lastBubble = "";
+// fayl tashlanayotganda: og'zini ochadi (surprised), yutgandan keyin xursand
+let feedMood: Mood | null = null;
 function render() {
   if (!S) return;
-  const m = moodOf(S);
+  const m = feedMood ?? moodOf(S);
   if (m !== mood) {
     mood = m;
     engine?.setMood(m);

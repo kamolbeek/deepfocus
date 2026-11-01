@@ -15,6 +15,8 @@ const {
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const { spawn } = require("node:child_process");
+const os = require("node:os");
 const { METHODS, methodById } = require("./shared/methods.js");
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -330,8 +332,22 @@ function push() {
 }
 
 // Kursor holatini tez-tez (30 marta/soniya) yuboramiz: ko'zlar silliq kuzatadi
+let petCatch = false;
+let petIgnore = true;
 function sendCursor() {
   const c = screen.getCursorScreenPoint();
+  followCursorDisplay(c);
+  // ish stolidagi kompanyon ustiga kursor kelsa (fayl sudralayotganda ham) — oyna uni qabul qiladi
+  if (alive(pet) && pet.isVisible() && !drag && !resizing) {
+    const b = pet.getBounds();
+    const inside = c.x > b.x + b.width * 0.15 && c.x < b.x + b.width * 0.85 && c.y > b.y + b.height * 0.12 && c.y < b.y + b.height * 0.8;
+    petCatch = inside;
+    const ignore = !(petHover || inside);
+    if (ignore !== petIgnore) {
+      petIgnore = ignore;
+      pet.setIgnoreMouseEvents(ignore, { forward: true });
+    }
+  }
   for (const w of [notchWin, pet]) {
     if (!alive(w) || !w.isVisible()) continue;
     const [wx, wy] = w.getPosition();
@@ -360,14 +376,46 @@ function testHooks(w, file) {
 
 // ---------- Notch oynasi (kamera yonida)
 let notchWin = null;
-function notchGeometry() {
-  const d = screen.getPrimaryDisplay();
+// Notch qaysi ekranda turgani (kursor boshqa ekranga o'tsa, u ham o'tadi)
+let notchDisplayId = null;
+function notchDisplay() {
+  return screen.getAllDisplays().find((x) => x.id === notchDisplayId) ?? screen.getPrimaryDisplay();
+}
+function notchGeometry(d = notchDisplay()) {
   // Sinov uchun: DF_MB / DF_NOTCH bilan notch'li Mac'ni taqlid qilish mumkin
   const menuBar = Number(process.env.DF_MB) || Math.max(24, d.workArea.y - d.bounds.y);
-  const hasNotch = process.env.DF_NOTCH ? true : menuBar >= 30; // notch'li MacBook'larda menyu satri balandroq
+  // notch faqat MacBook'ning o'z ekranida bo'ladi (menyu satri balandroq)
+  const builtIn = d.internal !== false;
+  const hasNotch = process.env.DF_NOTCH ? true : builtIn && menuBar >= 30;
   return { d, menuBar, hasNotch, notchW: hasNotch ? Number(process.env.DF_NOTCH) || 184 : 0 };
 }
+function placeNotch(d) {
+  if (!alive(notchWin)) return;
+  notchDisplayId = d.id;
+  const g = notchGeometry(d);
+  notchWin.setBounds({ x: Math.round(d.bounds.x + d.bounds.width / 2 - NOTCH_W / 2), y: d.bounds.y, width: NOTCH_W, height: NOTCH_H });
+  notchWin.webContents.send("geom", { mb: g.menuBar, notch: g.notchW });
+}
+let pendingDisplay = null;
+let pendingSince = 0;
+function followCursorDisplay(c) {
+  if (store.mode !== "notch" || store.hidden || !alive(notchWin)) return;
+  const d = screen.getDisplayNearestPoint(c);
+  if (d.id === notchDisplay().id) {
+    pendingDisplay = null;
+    return;
+  }
+  if (pendingDisplay !== d.id) {
+    pendingDisplay = d.id;
+    pendingSince = Date.now();
+    return;
+  }
+  if (Date.now() - pendingSince < 250) return;
+  pendingDisplay = null;
+  placeNotch(d);
+}
 function createNotchWindow() {
+  notchDisplayId = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id;
   const { d, menuBar, hasNotch, notchW } = notchGeometry();
   notchWin = new BrowserWindow({
     width: NOTCH_W,
@@ -552,6 +600,165 @@ function stopWalk() {
   saveStore();
 }
 
+// ---------- Momiq: Claude obunasi (kompyuterdagi Claude Code) orqali savol-javob — API kalit kerak emas
+const MOMIQ_SYS =
+  "Sen Momiq — DeepFokus fokus ilovasidagi yoqimtoy arvohcha yordamchisan. Foydalanuvchi bilan o'zbek tilida, " +
+  "samimiy, qisqa va aniq gaplash. Fayl berilsa, uni o'qib, mazmunini va eng muhim jihatlarini tushuntir.";
+let chatWin = null;
+let chatLog = [];
+let chatContinue = false;
+let chatBusy = false;
+let claudeEnv = null;
+function findClaude() {
+  if (claudeEnv) return Promise.resolve(claudeEnv);
+  return new Promise((resolve) => {
+    const home = os.homedir();
+    const extra = [
+      path.join(home, ".claude", "local"),
+      path.join(home, ".local", "bin"),
+      path.join(home, ".npm-global", "bin"),
+      path.join(home, ".bun", "bin"),
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+    ];
+    try {
+      const nvm = path.join(home, ".nvm", "versions", "node");
+      for (const v of fs.readdirSync(nvm)) extra.push(path.join(nvm, v, "bin"));
+    } catch {}
+    let out = "";
+    const p = spawn("/bin/zsh", ["-lc", 'printf "%s\\n" "$PATH"; command -v claude || true'], { env: process.env });
+    const done = () => {
+      const [pth, bin] = out.trim().split("\n");
+      const PATH = [pth || process.env.PATH || "", ...extra].join(":");
+      let claude = (bin || "").trim();
+      if (!claude || !fs.existsSync(claude)) claude = extra.map((d) => path.join(d, "claude")).find((f) => fs.existsSync(f)) || "";
+      claudeEnv = { PATH, claude };
+      resolve(claudeEnv);
+    };
+    p.stdout.on("data", (d) => (out += d));
+    p.on("close", done);
+    p.on("error", done);
+    setTimeout(() => p.kill(), 6000);
+  });
+}
+function chatPush() {
+  if (alive(chatWin)) chatWin.webContents.send("chat", { log: chatLog, busy: chatBusy });
+}
+function openChat() {
+  const W = 380;
+  const H = 480;
+  let x, y;
+  if (store.mode === "desktop" && alive(pet)) {
+    const b = pet.getBounds();
+    const wa = screen.getDisplayMatching(b).workArea;
+    x = b.x + b.width + 8 + W > wa.x + wa.width ? b.x - W - 8 : b.x + b.width + 8;
+    y = Math.max(wa.y + 8, Math.min(b.y, wa.y + wa.height - H - 8));
+  } else {
+    const { d, menuBar } = notchGeometry();
+    x = Math.round(d.bounds.x + d.bounds.width / 2 - W / 2);
+    y = d.bounds.y + menuBar + 10;
+  }
+  if (!alive(chatWin)) {
+    chatWin = new BrowserWindow({
+      width: W, height: H, x: Math.round(x), y: Math.round(y),
+      frame: false, transparent: true, resizable: false, hasShadow: true,
+      skipTaskbar: true, fullscreenable: false, show: false, backgroundColor: "#00000000",
+      webPreferences: commonPrefs(),
+    });
+    chatWin.setAlwaysOnTop(true, "floating");
+    chatWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    chatWin.loadFile(path.join(__dirname, "renderer", "chat.html"));
+    chatWin.once("ready-to-show", () => {
+      chatWin.show();
+      chatPush();
+    });
+  } else {
+    chatWin.setPosition(Math.round(x), Math.round(y));
+    chatWin.show();
+    chatWin.focus();
+    chatPush();
+  }
+}
+async function askMomiq(text, files = []) {
+  if (chatBusy) return;
+  files = files.filter((f) => typeof f === "string" && f && fs.existsSync(f));
+  text = String(text || "").trim();
+  if (!text && !files.length) return;
+  openChat();
+  const names = files.map((f) => path.basename(f));
+  chatLog.push({ role: "user", text: text || "", files: names });
+  chatBusy = true;
+  chatPush();
+  const finish = (reply, error = false) => {
+    chatBusy = false;
+    chatLog.push({ role: "momiq", text: reply, error });
+    chatPush();
+    if (store.mode === "desktop" && !error) say("Javob tayyor! 👻", 3500);
+  };
+  const { PATH, claude } = await findClaude();
+  if (!claude) {
+    return finish(
+      "Kompyuterda Claude Code topilmadi. Terminalda bir marta shuni bajaring:\n\nnpm install -g @anthropic-ai/claude-code\nclaude\n\nkeyin Claude obunangiz bilan kiring. Shundan so'ng men obunangiz orqali javob beraman, API kalit kerak emas.",
+      true,
+    );
+  }
+  let prompt = text;
+  if (files.length) {
+    const list = files.map((f) => `- ${f}`).join("\n");
+    prompt = `${text || "Shu fayl(lar)ni ko'rib chiq: nima ekanini va eng muhim jihatlarini qisqa tushuntirib ber."}\n\nFayllar:\n${list}`;
+  }
+  const dir = path.join(app.getPath("userData"), "momiq");
+  fs.mkdirSync(dir, { recursive: true });
+  const args = ["-p", prompt, "--output-format", "text", "--append-system-prompt", MOMIQ_SYS];
+  if (chatContinue) args.push("--continue");
+  if (files.length) {
+    args.push("--allowedTools", "Read");
+    for (const d of new Set(files.map((f) => path.dirname(f)))) args.push("--add-dir", d);
+  }
+  let out = "";
+  let err = "";
+  let p;
+  try {
+    p = spawn(claude, args, { cwd: dir, env: { ...process.env, PATH } });
+  } catch (e) {
+    return finish(`Claude Code'ni ishga tushirib bo'lmadi: ${e.message}`, true);
+  }
+  const killer = setTimeout(() => p.kill(), 240_000);
+  p.stdout.on("data", (d) => (out += d));
+  p.stderr.on("data", (d) => (err += d));
+  p.on("error", (e) => {
+    clearTimeout(killer);
+    finish(`Claude Code'ni ishga tushirib bo'lmadi: ${e.message}`, true);
+  });
+  p.on("close", (code) => {
+    clearTimeout(killer);
+    if (code === 0 && out.trim()) {
+      chatContinue = true;
+      return finish(out.trim());
+    }
+    const msg = (err || out).trim();
+    if (/log ?in|auth|credential|api key|unauthor/i.test(msg))
+      return finish("Claude Code'ga kirilmagan. Terminalda `claude` ni ishga tushirib, /login orqali Claude obunangiz bilan kiring.", true);
+    finish(msg ? `Xato: ${msg.slice(0, 600)}` : "Javob kelmadi, qaytadan urinib ko'ring.", true);
+  });
+}
+ipcMain.on("chat-send", (_e, m) => askMomiq(m?.text, Array.isArray(m?.files) ? m.files : []));
+ipcMain.on("chat-new", () => {
+  if (chatBusy) return;
+  chatLog = [];
+  chatContinue = false;
+  chatPush();
+});
+ipcMain.on("chat-close", () => alive(chatWin) && chatWin.hide());
+ipcMain.on("chat-files", (_e, files) => askMomiq("", Array.isArray(files) ? files : []));
+ipcMain.handle("file-icon", async (_e, f) => {
+  try {
+    return (await app.getFileIcon(String(f), { size: "large" })).toDataURL();
+  } catch {
+    return "";
+  }
+});
+
 // ---------- Sudrash va kattalashtirish
 let drag = null;
 let resizing = null;
@@ -624,7 +831,11 @@ function endResize() {
 
 ipcMain.on("interactive", (e, on) => {
   const w = BrowserWindow.fromWebContents(e.sender);
-  w?.setIgnoreMouseEvents(!on, { forward: true });
+  if (w === pet) {
+    const ignore = !(on || petCatch);
+    petIgnore = ignore;
+    w.setIgnoreMouseEvents(ignore, { forward: true });
+  } else w?.setIgnoreMouseEvents(!on, { forward: true });
   if (w === pet) {
     petHover = on;
     if (on) stopWalk();
@@ -635,6 +846,7 @@ ipcMain.on("cmd", (_e, c, arg) => {
   else if (c === "skip") skip();
   else if (c === "reset") reset();
   else if (c === "menu") tray?.popUpContextMenu();
+  else if (c === "chat") openChat();
   else if (c === "method") chooseMethod(arg);
   else if (c === "desktop") setAppMode("desktop");
   else if (c === "notch") setAppMode("notch");
@@ -750,6 +962,7 @@ function rebuildMenu() {
     },
     { type: "separator" },
     { label: "To'liq oynani ochish", accelerator: "Alt+Cmd+D", click: openBig },
+    { label: "Momiq'dan so'rash", accelerator: "Alt+Cmd+M", click: openChat },
     { label: "Ovoz", type: "checkbox", checked: store.sound, click: (i) => ((store.sound = i.checked), saveStore()) },
     {
       label: "Kompyuter yonganda ochilsin",
@@ -828,6 +1041,7 @@ app.whenReady().then(() => {
   globalShortcut.register("Alt+Command+F", toggle);
   globalShortcut.register("Alt+Command+H", () => setHidden(!store.hidden));
   globalShortcut.register("Alt+Command+D", openBig);
+  globalShortcut.register("Alt+Command+M", openChat);
 
   setInterval(tick, 250);
   setInterval(sendCursor, 33);
@@ -835,10 +1049,17 @@ app.whenReady().then(() => {
   powerMonitor.on("lock-screen", () => {
     if (T.running && T.mode === "focus") say("Qaytganingda davom etamiz.", 5000);
   });
-  screen.on("display-metrics-changed", () => {
-    const { d } = notchGeometry();
-    if (alive(notchWin)) notchWin.setBounds({ x: Math.round(d.bounds.x + d.bounds.width / 2 - NOTCH_W / 2), y: d.bounds.y, width: NOTCH_W, height: NOTCH_H });
-  });
+  const replace = () => placeNotch(notchDisplay());
+  screen.on("display-metrics-changed", replace);
+  screen.on("display-added", replace);
+  screen.on("display-removed", replace);
+  if (process.env.DF_ASK) {
+    setTimeout(() => askMomiq(process.env.DF_ASK, process.env.DF_ASKFILE ? [process.env.DF_ASKFILE] : []), 1500);
+    setTimeout(async () => {
+      if (alive(chatWin)) fs.writeFileSync("/tmp/chatwin.png", (await chatWin.webContents.capturePage()).toPNG());
+      app.quit();
+    }, 6000);
+  }
   setTimeout(() => say(todaySessions().length ? "Qaytding! Davom etamizmi?" : "Salom! Bugun nimaga fokus qilamiz?", 5000), 1200);
 });
 

@@ -96,3 +96,10 @@ body:hover .grip { opacity: 1; }
   60% { transform: translateY(4px) scale(1.04, .94); opacity: 1; }
   100% { transform: none; }
 }
+
+/* Fayl yutish */
+.food { position: fixed; width: 56px; height: 56px; object-fit: contain; border-radius: 8px; z-index: 50; pointer-events: none; filter: drop-shadow(0 6px 10px rgba(0,0,0,.25)); }
+#back, #gl, #lids { transition: transform .25s cubic-bezier(.3,1.4,.5,1); transform-origin: 50% 85%; }
+.stage.hungry #back, .stage.hungry #gl, .stage.hungry #lids { transform: scale(1.06); }
+.stage.gulp #back, .stage.gulp #gl, .stage.gulp #lids { animation: gulp .5s cubic-bezier(.3,1.4,.5,1); }
+@keyframes gulp { 0% { transform: scale(1.06); } 35% { transform: scale(.94, 1.08); } 70% { transform: scale(1.03, .97); } 100% { transform: none; } }

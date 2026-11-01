@@ -10,6 +10,12 @@ const META: Record<Pose, { w: number; h: number; top: number; cx: number; eyeX: 
   sleep: { w: 340, h: 333, top: 20.8, cx: 187.4, eyeX: 159.7, eyeY: 163.7 },
 };
 const DOME = 240;
+/** Asl rasmdan ajratilgan ko'zlar (rasm pikselida) — ular kursor ortidan siljiydi. */
+const EYES: Partial<Record<Pose, { x: number; y: number; w: number; h: number }[]>> = {
+  main: [{ x: 96, y: 98, w: 56, h: 69 }, { x: 209, y: 62, w: 52, h: 68 }],
+  wave: [{ x: 118, y: 127, w: 59, h: 72 }, { x: 231, y: 83, w: 53, h: 70 }],
+  smile: [{ x: 103, y: 107, w: 61, h: 75 }, { x: 209, y: 51, w: 55, h: 69 }],
+};
 /** Asl rasmdagi tana rangi (o'rtacha). */
 export const GHOST_ORIGINAL = "#C1AFF0";
 
@@ -17,11 +23,12 @@ export type GhostState = "idle" | "working" | "sleeping" | "dizzy" | "finished";
 export type GhostEmote = "love" | "happy" | "proud" | "wink" | "surprised" | "yawn";
 
 // ---------- Rasmlar va rang almashtirish
-const imgs = {} as Record<Pose, HTMLImageElement>;
-for (const p of Object.keys(META) as Pose[]) {
+const imgs: Record<string, HTMLImageElement> = {};
+const files = ["sleep", ...(["main", "wave", "smile"] as const).flatMap((p) => [`${p}_base`, `${p}_eye0`, `${p}_eye1`])];
+for (const f of files) {
   const im = new Image();
-  im.src = `ghost/${p}.png`;
-  imgs[p] = im;
+  im.src = `ghost/${f}.png`;
+  imgs[f] = im;
 }
 export const ghostReady = Promise.all(Object.values(imgs).map((i) => i.decode().catch(() => {})));
 
@@ -56,7 +63,7 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 const cache = new Map<string, HTMLCanvasElement | HTMLImageElement>();
 /** Tana rangini almashtiradi; ko'zlar, og'iz va yaltiroq joylar o'zgarmaydi. */
-function sprite(p: Pose, hex: string): HTMLCanvasElement | HTMLImageElement {
+function sprite(p: string, hex: string): HTMLCanvasElement | HTMLImageElement {
   const src = imgs[p];
   if (!src.complete || !src.naturalWidth || hex.toUpperCase() === GHOST_ORIGINAL) return src;
   const key = `${p}|${hex}`;
@@ -120,6 +127,8 @@ export class GhostSprite {
   private emoteUntil = 0;
   private slaps: number[] = [];
   private physDx = 0;
+  private nextBlink = 2 + Math.random() * 3;
+  private blinkT = -1;
 
   setColor(hex: string) {
     this.color = hex;
@@ -151,7 +160,7 @@ export class GhostSprite {
     this.spinDur = ms / 1000;
   }
   blink() {
-    this.squash();
+    this.blinkT = 0;
   }
   /** Chertish: 3 marta tez bosilsa boshi aylanadi. */
   slap() {
@@ -195,6 +204,13 @@ export class GhostSprite {
       if (this.hopT > this.hopDur) this.hopT = -1;
     }
     if (this.squashT >= 0 && (this.squashT += dt) > 0.35) this.squashT = -1;
+    // ko'z yumib-ochish
+    if (this.blinkT >= 0) {
+      if ((this.blinkT += dt) > 0.16) this.blinkT = -1;
+    } else if ((this.nextBlink -= dt) <= 0) {
+      this.blinkT = 0;
+      this.nextBlink = 2.5 + Math.random() * 4;
+    }
     if (this.spinT >= 0 && (this.spinT += dt) > this.spinDur) this.spinT = -1;
     if (this.wobbleT >= 0 && (this.wobbleT += dt) > (this.state === "dizzy" ? 2.6 : 0.6)) this.wobbleT = -1;
   }
@@ -202,7 +218,8 @@ export class GhostSprite {
   draw(x: CanvasRenderingContext2D, W: number, H: number) {
     const p = this.pose();
     const m = META[p];
-    const im = sprite(p, this.color);
+    const eyes = EYES[p];
+    const im = sprite(eyes ? `${p}_base` : p, this.color);
     if (!(im as HTMLImageElement).width) return;
     const t = this.t;
     const asleep = this.state === "sleeping";
@@ -240,6 +257,22 @@ export class GhostSprite {
     const ox = -m.cx;
     const oy = -tall - m.top;
     x.drawImage(im, ox, oy, m.w, m.h);
+    if (eyes) {
+      // ko'zlar kursor tomonga siljiydi (pastga, yuqoriga, yon tomonlarga) va vaqti-vaqti bilan yumiladi
+      const ex = this.lx * this.faceS * 9;
+      const ey = -this.ly * 8;
+      const bl = this.blinkT >= 0 ? Math.max(0.12, Math.abs(Math.cos((this.blinkT / 0.16) * Math.PI))) : 1;
+      eyes.forEach((e, i) => {
+        const es = sprite(`${p}_eye${i}`, this.color);
+        if (!(es as HTMLImageElement).width) return;
+        const cy = oy + e.y + e.h / 2 + ey;
+        x.save();
+        x.translate(0, cy);
+        x.scale(1, bl);
+        x.drawImage(es, ox + e.x + ex, -e.h / 2, e.w, e.h);
+        x.restore();
+      });
+    }
     x.restore();
   }
 }

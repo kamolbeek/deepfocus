@@ -39,6 +39,7 @@ declare global {
       onActivity: (cb: (a: { kind: string; text: string }) => void) => void;
       onSound: (cb: (k: string) => void) => void;
       onTestOpen: (cb: () => void) => void;
+      onGeom: (cb: (g: { mb: number; notch: number }) => void) => void;
       cmd: (c: string, arg?: unknown) => void;
       poke: () => void;
       interactive: (on: boolean) => void;
@@ -48,8 +49,8 @@ declare global {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const q = new URLSearchParams(location.search);
-const MB = Math.max(24, Number(q.get("mb")) || 37);
-const NOTCH = Number(q.get("notch")) || 0;
+let MB = Math.max(24, Number(q.get("mb")) || 37);
+let NOTCH = Number(q.get("notch")) || 0;
 const island = $("island");
 const root = document.documentElement.style;
 root.setProperty("--mb", `${MB}px`);
@@ -76,11 +77,11 @@ const EMOTES: { id: GhostEmote | "dizzy" | "roll"; name: string }[] = [
 ];
 
 // ---------- Orol o'lchamlari (Coucou'dagidek ixcham)
-const WING_COMPACT = NOTCH ? 50 : 66;
-const WING_MINI = NOTCH ? 34 : 50;
+const wingCompact = () => (NOTCH ? 50 : 66);
+const wingMini = () => (NOTCH ? 34 : 50);
 type View = "mini" | "compact" | "peek" | "activity" | "open" | "look";
 const width = (v: View) =>
-  v === "open" || v === "look" ? 420 : v === "activity" ? Math.max(NOTCH + 2 * 120, 320) : NOTCH + 2 * (v === "mini" ? WING_MINI : v === "peek" ? WING_COMPACT + 8 : WING_COMPACT);
+  v === "open" || v === "look" ? 420 : v === "activity" ? Math.max(NOTCH + 2 * 120, 320) : NOTCH + 2 * (v === "mini" ? wingMini() : v === "peek" ? wingCompact() + 8 : wingCompact());
 const height = (v: View) => (v === "open" ? MB + 228 : v === "look" ? MB + 180 : v === "activity" ? MB + 32 : v === "peek" ? MB + 8 : MB);
 const radius = (v: View) => (v === "open" || v === "look" ? 30 : v === "activity" ? 20 : v === "peek" ? 16 : 12);
 
@@ -187,6 +188,14 @@ $("desk").addEventListener("click", () => {
   window.df.cmd("desktop");
 });
 $("big").addEventListener("click", () => window.df.cmd("big"));
+$("ask").addEventListener("click", () => window.df.cmd("chat"));
+// boshqa ekranga o'tganda: menyu satri balandligi va notch kengligi o'zgaradi
+window.df.onGeom((g) => {
+  MB = Math.max(24, g.mb || 24);
+  NOTCH = g.notch || 0;
+  root.setProperty("--mb", `${MB}px`);
+  setView(view);
+});
 $("gear").addEventListener("click", () => setView("look"));
 $("back").addEventListener("click", () => setView("open"));
 window.df.onTestOpen(() => setView(q.get("look") ? "look" : "open"));

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+<title>Momiq</title>
+<link rel="stylesheet" href="chat.css" />
+</head>
+<body>
+  <div id="card" class="card">
+    <header>
+      <img src="ghost/main.png" alt="" class="av" />
+      <div class="ttl"><b>Momiq</b><span>Claude obunangiz orqali</span></div>
+      <button id="new" class="hb" title="Yangi suhbat">Yangi</button>
+      <button id="close" class="hb x" aria-label="Yopish">✕</button>
+    </header>
+    <main id="log" aria-live="polite"></main>
+    <div id="files" class="files" hidden></div>
+    <form id="form">
+      <textarea id="q" rows="1" placeholder="Momiq'dan so'rang yoki fayl tashlang…"></textarea>
+      <button id="send" class="send" aria-label="Yuborish"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+    </form>
+    <div id="drop" class="drop" hidden>Faylni shu yerga tashlang</div>
+  </div>
+  <script src="chat.js"></script>
+</body>
+</html>

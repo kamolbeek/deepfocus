@@ -19,6 +19,14 @@ await build({
   minify: true,
 });
 await build({
+  entryPoints: ["renderer/chat.ts"],
+  bundle: true,
+  outfile: "renderer/chat.js",
+  format: "iife",
+  target: "chrome130",
+  minify: true,
+});
+await build({
   entryPoints: ["../lib/methods.ts"],
   bundle: true,
   outfile: "shared/methods.js",
