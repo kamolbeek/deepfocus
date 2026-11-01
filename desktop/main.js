@@ -25,7 +25,7 @@ const PET_W = 230;
 const PET_H = 330;
 // Notch oynasi: ochilgan panel shu o'lchamga sig'adi
 const NOTCH_W = 460;
-const NOTCH_H = 320;
+const NOTCH_H = 400;
 
 // ---------- Mahalliy fayl: sozlamalar, sessiyalar, oyna joyi
 const storePath = () => path.join(app.getPath("userData"), "deepfokus.json");
@@ -42,8 +42,9 @@ const DEFAULTS = {
   mode: "notch", // "notch" — kamera yonida, "desktop" — ish stolida
   petScale: 1,
   roam: true, // ish stolida yurib yurish
-  blobShape: "capsule", // notch paneli avatarining shakli
-  blobColor: "#7B5CF0",
+  outfit: "none", // notch'dagi kompanyon kiyimi
+  bodyShape: "round",
+  bodyColor: "#A992EA",
   sessions: [],
 };
 let store = { ...DEFAULTS };
@@ -303,8 +304,10 @@ function state() {
     lastAt: store.sessions.length ? store.sessions[store.sessions.length - 1].at : 0,
     bubble: Date.now() < bubble.until ? bubble.text : "",
     appMode: store.mode,
-    blobShape: store.blobShape,
-    blobColor: store.blobColor,
+    outfit: store.outfit,
+    bodyShape: store.bodyShape,
+    bodyColor: store.bodyColor,
+    idleSec: powerMonitor.getSystemIdleTime(),
     scale: store.petScale,
   };
 }
@@ -338,7 +341,7 @@ function testHooks(w, file) {
   setTimeout(async () => {
     if (process.env.DF_OPEN) w.webContents.send("test-open");
     if (process.env.DF_RUN) toggle();
-    await new Promise((r) => setTimeout(r, 1800));
+    await new Promise((r) => setTimeout(r, Number(process.env.DF_WAIT) || 1800));
     const img = await w.webContents.capturePage();
     fs.writeFileSync(file, img.toPNG());
     app.quit();
@@ -349,9 +352,10 @@ function testHooks(w, file) {
 let notchWin = null;
 function notchGeometry() {
   const d = screen.getPrimaryDisplay();
-  const menuBar = Math.max(24, d.workArea.y - d.bounds.y);
-  const hasNotch = menuBar >= 30; // notch'li MacBook'larda menyu satri balandroq
-  return { d, menuBar, hasNotch, notchW: hasNotch ? 196 : 0 };
+  // Sinov uchun: DF_MB / DF_NOTCH bilan notch'li Mac'ni taqlid qilish mumkin
+  const menuBar = Number(process.env.DF_MB) || Math.max(24, d.workArea.y - d.bounds.y);
+  const hasNotch = process.env.DF_NOTCH ? true : menuBar >= 30; // notch'li MacBook'larda menyu satri balandroq
+  return { d, menuBar, hasNotch, notchW: hasNotch ? Number(process.env.DF_NOTCH) || 184 : 0 };
 }
 function createNotchWindow() {
   const { d, menuBar, hasNotch, notchW } = notchGeometry();
@@ -608,9 +612,10 @@ ipcMain.on("cmd", (_e, c, arg) => {
   else if (c === "notch") setAppMode("notch");
   else if (c === "big") openBig();
   else if (c === "scale") setScale(arg);
-  else if (c === "blob") {
-    if (arg?.shape) store.blobShape = String(arg.shape);
-    if (arg?.color) store.blobColor = String(arg.color);
+  else if (c === "look") {
+    if (arg?.outfit) store.outfit = String(arg.outfit);
+    if (arg?.shape) store.bodyShape = String(arg.shape);
+    if (arg?.color) store.bodyColor = String(arg.color);
     saveStore();
     push();
   }

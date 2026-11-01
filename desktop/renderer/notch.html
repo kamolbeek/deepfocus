@@ -10,16 +10,17 @@
   <div id="island" class="island collapsed">
     <i class="ear l"></i><i class="ear r"></i>
 
-    <!-- yig'ilgan holat: chap qanotda yuz, o'ngda vaqt -->
-    <svg id="face" class="face" aria-hidden="true"></svg>
+    <!-- kompanyon: yig'ilganda chap qanotda, ochilganda panelda kattalashadi -->
+    <canvas id="bot" class="bot" role="img" aria-label="DeepFokus kompanyoni"></canvas>
     <div id="wtime" class="wtime"><b id="wdot"></b><span id="wtext"></span></div>
+    <div id="wdots" class="wdots" aria-hidden="true"></div>
     <div id="act" class="act" role="status" aria-live="polite"></div>
 
     <!-- ochilgan panel -->
     <div id="panel" class="panel">
       <div id="main" class="view">
         <div class="top">
-          <svg id="avatar" class="avatar" role="img" aria-label="DeepFokus kompanyoni"></svg>
+          <div id="avslot" class="avslot"></div>
           <div class="timer">
             <div id="ptime" class="ptime">25:00</div>
             <div id="plabel" class="plabel">Pomodoro · Fokus</div>
@@ -46,12 +47,14 @@
 
       <div id="look" class="view" hidden>
         <div class="vhead"><button id="back" class="lb wide">← Orqaga</button><span>Ko'rinish</span></div>
-        <div class="sec">Shakl</div>
-        <div id="shapes" class="grid shapes"></div>
-        <div class="sec">Rang</div>
-        <div id="colors" class="grid colors"></div>
-        <div class="sec">Kayfiyatlar <small>(bosib ko'ring)</small></div>
-        <div id="exprs" class="chips wrap"></div>
+        <div class="sec">Kiyim</div>
+        <div id="outfits" class="grid outfits"></div>
+        <div class="row2">
+          <div><div class="sec">Shakl</div><div id="shapes" class="grid shapes"></div></div>
+          <div><div class="sec">Rang</div><div id="colors" class="grid colors"></div></div>
+        </div>
+        <div class="sec">O'ynash</div>
+        <div id="emotes" class="chips wrap"></div>
       </div>
     </div>
   </div>

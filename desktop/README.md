@@ -15,3 +15,10 @@ npm run build          # renderer + umumiy kod (../lib dan)
 npx electron .         # sinab ko'rish
 npm run pack           # dist/DeepFokus-darwin-arm64/DeepFokus.app
 ```
+
+## Minnatdorchilik
+
+Notch'dagi kompanyonning animatsiya mantig'i (bosh burilishi, ko'z qisish, emotsiyalar,
+kiyimlar fizikasi) [Coucou](https://github.com/Louis-CFM/coucou) loyihasining MIT
+litsenziyali kodidan olingan va moslashtirilgan — `renderer/buddy/LICENSE-coucou.txt`.
+Personajning ko'rinishi (binafsha tana, krem yuz, antenna) DeepFokus'niki.

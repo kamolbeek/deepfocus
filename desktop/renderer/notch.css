@@ -1,7 +1,7 @@
 * { box-sizing: border-box; margin: 0; }
 [hidden] { display: none !important; }
 html, body {
-  width: 460px; height: 320px; overflow: hidden; background: transparent;
+  width: 460px; height: 400px; overflow: hidden; background: transparent;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif;
   -webkit-user-select: none; user-select: none; cursor: default; color: #fff;
 }
@@ -20,12 +20,28 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
 .ear.l { left: -10px; background: radial-gradient(circle at 0 100%, transparent 9.5px, #000 10px); }
 .ear.r { right: -10px; background: radial-gradient(circle at 100% 100%, transparent 9.5px, #000 10px); }
 
-.face {
-  position: absolute; top: 0; left: var(--facex); width: var(--facew); height: var(--mb);
-  overflow: visible; transition: opacity .2s, transform .46s cubic-bezier(.3,1.25,.4,1);
+/* Kompanyon kanvasi: joyi va kattaligi holatga qarab silliq o'zgaradi */
+.bot {
+  position: absolute; left: var(--bx); top: var(--by); width: var(--bd); height: calc(var(--bd) + var(--bo));
+  transform: translate(-50%, -50%);
+  transition: left .46s cubic-bezier(.3,1.2,.4,1), top .46s cubic-bezier(.3,1.2,.4,1), width .46s cubic-bezier(.3,1.2,.4,1), height .46s cubic-bezier(.3,1.2,.4,1);
+  cursor: pointer;
 }
-.island.peek .face, .island.activity .face { transform: translateY(5px) scale(1.12); }
-.island.open .face { opacity: 0; }
+.wdots { position: absolute; top: 0; right: var(--wright); height: var(--mb); display: flex; align-items: center; gap: 4px; transition: opacity .2s; }
+.wdots i { width: 6px; height: 6px; border-radius: 50%; background: #3A3A3C; }
+.wdots i.on { background: var(--acc, #A992EA); }
+.island.mini .wdots, .island.open .wdots, .island.mini .wtime { opacity: 0; }
+.avslot { width: 128px; height: 128px; flex: none; }
+.outfits button { width: 40px; height: 40px; border-radius: 10px; background: #1C1C1E; display: flex; align-items: center; justify-content: center; }
+.outfits button.on { box-shadow: inset 0 0 0 2px #fff; }
+.outfits canvas { width: 40px; height: 40px; }
+.row2 { display: flex; flex-direction: column; }
+.island.look .bot { opacity: 0; pointer-events: none; transition: opacity .15s; }
+.outfits { gap: 5px; }
+.outfits button { width: 42px; height: 42px; }
+.shapes button { width: 42px; height: 42px; }
+.colors { gap: 8px; }
+.colors button { width: 26px; height: 26px; }
 
 .wtime {
   position: absolute; top: 0; right: var(--wright); height: var(--mb);
@@ -33,7 +49,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
   font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.1px;
   transition: opacity .2s, transform .46s cubic-bezier(.3,1.25,.4,1);
 }
-.island.peek .wtime, .island.activity .wtime { transform: translateY(5px); }
+.island.peek .wtime, .island.activity .wtime { transform: translateY(3px); }
 .island.open .wtime { opacity: 0; }
 .wtime b { width: 7px; height: 7px; border-radius: 50%; background: #7B79FF; }
 .wtime b.brk { background: #34C759; }
@@ -87,8 +103,8 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
 .grid { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .shapes button { width: 38px; height: 38px; border-radius: 10px; background: #1C1C1E; display: flex; align-items: center; justify-content: center; }
 .shapes button.on { box-shadow: inset 0 0 0 2px #fff; }
-.shapes svg { width: 26px; height: 26px; }
+.shapes canvas { width: 34px; height: 34px; }
 .colors button { width: 24px; height: 24px; border-radius: 50%; }
 .colors button.on { box-shadow: 0 0 0 2px #000, 0 0 0 4px #fff; }
-#exprs { margin-top: 6px; gap: 5px; }
-#exprs .chip { height: 24px; font-size: 11px; padding: 0 9px; }
+#emotes { margin-top: 6px; gap: 5px; }
+#emotes .chip { height: 26px; font-size: 12px; padding: 0 10px; }

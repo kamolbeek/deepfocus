@@ -1,5 +1,6 @@
-// Notch'dagi kompanyon: yig'ilgan "orol", mo'ralash, jonli faoliyat va ochiladigan panel
-import { BlobFace, SHAPE_LIST, EXPRESSIONS, type Expression, type Shape } from "./blob";
+// Notch'dagi kompanyon: Coucou kabi ixcham orol, kichrayib qoladigan mini holat,
+// kursorga qaraydigan, uxlab-uyg'onadigan, silasa yurakcha bo'ladigan kompanyon va ochiladigan panel.
+import { BotEngine, type BodyShape, type BotEmoteName, type Outfit } from "./buddy/engine";
 
 type State = {
   mode: "focus" | "short" | "long";
@@ -23,8 +24,10 @@ type State = {
   hour: number;
   lastAt: number;
   bubble: string;
-  blobShape: Shape;
-  blobColor: string;
+  idleSec: number;
+  outfit: Outfit;
+  bodyShape: BodyShape;
+  bodyColor: string;
 };
 
 declare global {
@@ -46,89 +49,128 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const q = new URLSearchParams(location.search);
 const MB = Math.max(24, Number(q.get("mb")) || 37);
 const NOTCH = Number(q.get("notch")) || 0;
-const WING = NOTCH ? 70 : 78;
-
 const island = $("island");
 const root = document.documentElement.style;
 root.setProperty("--mb", `${MB}px`);
 
-// Bloub ranglari
-const COLORS = ["#111111", "#7A5230", "#D64545", "#E8862E", "#E8B33A", "#6CC77A", "#4FB08F", "#4F8DF0", "#7B5CF0", "#D64FB0", "#9A9A9A", "#EEEDE8"];
-const SHAPE_NAME: Record<Shape, string> = {
-  circle: "Doira",
-  pebble: "Tosh",
-  squircle: "Kvadrat",
-  capsule: "Kapsula",
-  triangle: "Uchburchak",
-  hexagon: "Olti burchak",
-  cloud: "Bulut",
-  droplet: "Tomchi",
-};
-const EXPR_NAME: Record<Expression, string> = {
-  neutral: "Oddiy",
-  attentive: "Diqqatli",
-  surprised: "Hayron",
-  excited: "Hayajonli",
-  happy: "Xursand",
-  laughing: "Kulgan",
-  angry: "Jahldor",
-  sad: "Xafa",
-  scared: "Qo'rqqan",
-  suspicious: "Shubhali",
-  confused: "Gangigan",
-  curious: "Qiziquvchan",
-  proud: "Mag'rur",
-  shy: "Uyatchan",
-  unimpressed: "Befarq",
-  sleepy: "Uyquchi",
-};
+// ---------- Ranglar, shakllar, kiyimlar
+export const COLORS: { name: string; hex: string }[] = [
+  { name: "Lavanda", hex: "#A992EA" },
+  { name: "Anor", hex: "#F08A8A" },
+  { name: "Limon", hex: "#F3D27A" },
+  { name: "Kivi", hex: "#8CCB7E" },
+  { name: "Yalpiz", hex: "#8FD4B0" },
+  { name: "Paxta", hex: "#F2F0EC" },
+  { name: "Ko'mir", hex: "#3A3A42" },
+];
+const SHAPES: { id: BodyShape; name: string }[] = [
+  { id: "round", name: "Dumaloq" },
+  { id: "square", name: "To'rtburchak" },
+  { id: "long", name: "Uzunchoq" },
+  { id: "cloud", name: "Bulut" },
+];
+const OUTFITS: { id: Outfit; name: string }[] = [
+  { id: "none", name: "Kiyimsiz" },
+  { id: "crown", name: "Toj" },
+  { id: "santaHat", name: "Qorbobo qalpog'i" },
+  { id: "beanie", name: "Shapka" },
+  { id: "partyHat", name: "Bayram qalpog'i" },
+  { id: "bow", name: "Bantik" },
+  { id: "sunglasses", name: "Quyosh ko'zoynagi" },
+  { id: "roundGlasses", name: "Dumaloq ko'zoynak" },
+  { id: "scarf", name: "Sharf" },
+  { id: "bunnyEars", name: "Quyon quloqlari" },
+  { id: "witchHat", name: "Sehrgar shlyapasi" },
+  { id: "pumpkin", name: "Qovoq" },
+];
+const EMOTES: { id: BotEmoteName | "dizzy" | "roll"; name: string }[] = [
+  { id: "love", name: "❤️ Yurak" },
+  { id: "happy", name: "Xursand" },
+  { id: "wink", name: "Ko'z qisish" },
+  { id: "surprised", name: "Hayron" },
+  { id: "proud", name: "⭐ Mag'rur" },
+  { id: "yawn", name: "Esnash" },
+  { id: "roll", name: "Aylanish" },
+  { id: "dizzy", name: "Boshi aylanish" },
+];
 
-// ---------- O'lchamlar
-type Sz = { w: number; h: number; r: number };
-const collapsedW = NOTCH ? NOTCH + WING * 2 : 168;
-const SIZES: Record<string, Sz> = {
-  collapsed: { w: collapsedW, h: MB, r: 12 },
-  peek: { w: collapsedW + 22, h: MB + 12, r: 16 },
-  activity: { w: Math.max(collapsedW + 120, 330), h: MB + 34, r: 22 },
-  open: { w: 420, h: MB + 228, r: 30 },
-  look: { w: 420, h: MB + 270, r: 30 },
-};
-// Yuz chap qanotda, vaqt o'ng qanotda
-root.setProperty("--facew", `${WING}px`);
-root.setProperty("--facex", NOTCH ? "0px" : "6px");
-root.setProperty("--wright", NOTCH ? "12px" : "14px");
+// ---------- Orol o'lchamlari (Coucou'dagidek ixcham)
+const WING_COMPACT = NOTCH ? 50 : 66;
+const WING_MINI = NOTCH ? 34 : 50;
+type View = "mini" | "compact" | "peek" | "activity" | "open" | "look";
+const width = (v: View) =>
+  v === "open" || v === "look" ? 420 : v === "activity" ? Math.max(NOTCH + 2 * 120, 320) : NOTCH + 2 * (v === "mini" ? WING_MINI : v === "peek" ? WING_COMPACT + 8 : WING_COMPACT);
+const height = (v: View) => (v === "open" ? MB + 228 : v === "look" ? MB + 360 : v === "activity" ? MB + 32 : v === "peek" ? MB + 8 : MB);
+const radius = (v: View) => (v === "open" || v === "look" ? 30 : v === "activity" ? 20 : v === "peek" ? 16 : 12);
 
-let view: "collapsed" | "peek" | "activity" | "open" | "look" = "collapsed";
-function setView(v: typeof view) {
+// Kompanyon kanvasi: tana kengligi ≈ 0.68 × kanvas
+const OVER = 0.32; // tepada yuraklar va z'lar uchun joy
+function botBox(v: View) {
+  const W = width(v);
+  const wing = (W - NOTCH) / 2;
+  if (v === "open" || v === "look") {
+    // panelning chap tomonida katta
+    const d = 150;
+    return { x: (460 - W) / 2 + 16 + 64, y: MB + 4 + 66, d };
+  }
+  const head = Math.min(MB - 7, wing - 12) + (v === "peek" ? 4 : 0);
+  const d = head / 0.66;
+  const left = (460 - W) / 2;
+  return { x: left + wing / 2 + (NOTCH ? 3 : 0), y: MB / 2 + (v === "peek" ? 3 : 1), d };
+}
+
+let view: View = "compact";
+function setView(v: View) {
   view = v;
-  const s = SIZES[v];
-  root.setProperty("--w", `${s.w}px`);
-  root.setProperty("--h", `${s.h}px`);
-  root.setProperty("--r", `${s.r}px`);
-  island.className = `island ${v === "look" ? "open" : v}`;
+  root.setProperty("--w", `${width(v)}px`);
+  root.setProperty("--h", `${height(v)}px`);
+  root.setProperty("--r", `${radius(v)}px`);
+  root.setProperty("--wright", `${NOTCH ? 12 : 14}px`);
+  const b = botBox(v);
+  // kanvas orol ichida emas, oyna koordinatasida turadi (orol transform bilan markazlashgan)
+  root.setProperty("--bx", `${b.x - (460 - width(v)) / 2}px`);
+  root.setProperty("--by", `${b.y - (b.d * OVER) / 2}px`);
+  root.setProperty("--bd", `${b.d}px`);
+  root.setProperty("--bo", `${b.d * OVER}px`);
+  island.className = `island ${v === "look" ? "open look" : v}`;
   $("main").hidden = v === "look";
   $("look").hidden = v !== "look";
+  if (v !== "mini") lastActiveAt = performance.now();
 }
-setView("collapsed");
 
-// ---------- Yuz (notch) va avatar (panel)
-const faceSvg = $("face") as unknown as SVGSVGElement;
-const S = Math.round(MB * 1.22);
-faceSvg.setAttribute("viewBox", `${-WING / 2} ${-MB / 2} ${WING} ${MB}`);
-const face = new BlobFace({ svg: faceSvg, size: S, body: false, eyeColor: "#fff" });
+// ---------- Kompanyon
+const engine = new BotEngine();
+const canvas = $("bot") as HTMLCanvasElement;
+const ctx = canvas.getContext("2d")!;
+engine.onDizzy = () => {
+  engine.setState("dizzy");
+  setTimeout(() => engine.setState(baseState()), 2600);
+};
 
-const avSvg = $("avatar") as unknown as SVGSVGElement;
-avSvg.setAttribute("viewBox", "-70 -70 140 140");
-const avatar = new BlobFace({ svg: avSvg, size: 50, body: true, bodyColor: "#7B5CF0", eyeColor: "#fff", shape: "circle", eyeScale: 1.35 });
+let S0: State | null = null;
+let asleep = false;
+let lastActiveAt = performance.now();
+let mouse = { x: -999, y: -999 };
 
-// ---------- Sichqoncha
+const botCenter = () => {
+  const r = canvas.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height * (OVER / (1 + OVER)) + (r.height / (1 + OVER)) * 0.5, r: r.width * 0.36 };
+};
+
+function baseState() {
+  if (asleep) return "sleeping" as const;
+  if (S0?.running && S0.mode === "focus") return "working" as const;
+  return "idle" as const;
+}
+
+// ---------- Sichqoncha: orolga kelganda kattalashadi, bosganda ochiladi
 let inside = false;
 let closeTimer = 0;
 island.addEventListener("mouseenter", () => {
   inside = true;
   clearTimeout(closeTimer);
   window.df.interactive(true);
-  if (view === "collapsed" || view === "activity") setView("peek");
+  if (view === "mini" || view === "compact" || view === "activity") setView("peek");
 });
 island.addEventListener("mouseleave", () => {
   inside = false;
@@ -136,30 +178,30 @@ island.addEventListener("mouseleave", () => {
   closeTimer = window.setTimeout(
     () => {
       if (inside) return;
-      setView("collapsed");
+      setView("compact");
       window.df.interactive(false);
     },
-    view === "open" || view === "look" ? 900 : 120,
+    view === "open" || view === "look" ? 900 : 150,
   );
 });
 island.addEventListener("click", (e) => {
-  if (view === "peek" || view === "collapsed" || view === "activity") {
-    e.stopPropagation();
-    setView("open");
-    face.poke();
-  }
+  if (view === "open" || view === "look") return;
+  e.stopPropagation();
+  setView("open");
 });
-avSvg.addEventListener("click", () => {
-  avatar.poke();
+// Kompanyonni bosish — chertish (3 marta tez — boshi aylanadi)
+canvas.addEventListener("click", (e) => {
+  if (view !== "open" && view !== "look") return; // yig'ilganda bosish panelni ochadi
+  e.stopPropagation();
+  engine.slap();
   window.df.poke();
-  pokeExpr("surprised", 700, "laughing", 1600);
 });
 
 $("toggle").addEventListener("click", () => window.df.cmd("toggle"));
 $("reset").addEventListener("click", () => window.df.cmd("reset"));
 $("skip").addEventListener("click", () => window.df.cmd("skip"));
 $("desk").addEventListener("click", () => {
-  setView("collapsed");
+  setView("compact");
   window.df.interactive(false);
   window.df.cmd("desktop");
 });
@@ -168,51 +210,155 @@ $("gear").addEventListener("click", () => setView("look"));
 $("back").addEventListener("click", () => setView("open"));
 window.df.onTestOpen(() => setView(q.get("look") ? "look" : "open"));
 
-// ---------- Ko'rinish sozlamalari (shakl, rang, kayfiyatlar)
-const ns = "http://www.w3.org/2000/svg";
-function shapeIcon(sh: Shape) {
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", "-30 -30 60 60");
-  const f = new BlobFace({ svg, size: 22, body: true, bodyColor: "#fff", eyeColor: "#1C1C1E", shape: sh });
-  f.frame(0);
-  return { svg, f };
+// ---------- Ko'rinish: kiyim, shakl, rang tugmalari (har biri kichik kompanyon bilan)
+function miniIcon(size: number, setup: (e: BotEngine) => void) {
+  const c = document.createElement("canvas");
+  const dpr = 2;
+  c.width = size * dpr;
+  c.height = size * dpr;
+  const e = new BotEngine();
+  setup(e);
+  const g = c.getContext("2d")!;
+  return {
+    c,
+    e,
+    draw() {
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, size, size);
+      e.update(1 / 60);
+      e.draw(g, size, size * 1.15);
+    },
+  };
+}
+const icons: ReturnType<typeof miniIcon>[] = [];
+const outfitBtns: Record<string, HTMLButtonElement> = {};
+for (const o of OUTFITS) {
+  const b = document.createElement("button");
+  b.title = o.name;
+  b.setAttribute("aria-label", o.name);
+  const ic = miniIcon(40, (e) => {
+    e.setOutfit(o.id, false);
+    e.showAntenna = o.id === "none" || !["crown", "santaHat", "beanie", "partyHat", "witchHat", "pumpkin", "bunnyEars"].includes(o.id);
+  });
+  icons.push(ic);
+  b.appendChild(ic.c);
+  b.addEventListener("click", () => window.df.cmd("look", { outfit: o.id }));
+  $("outfits").appendChild(b);
+  outfitBtns[o.id] = b;
 }
 const shapeBtns: Record<string, HTMLButtonElement> = {};
-for (const sh of SHAPE_LIST) {
+const shapeIcons: Record<string, ReturnType<typeof miniIcon>> = {};
+for (const sh of SHAPES) {
   const b = document.createElement("button");
-  b.setAttribute("aria-label", SHAPE_NAME[sh]);
-  b.title = SHAPE_NAME[sh];
-  const { svg, f } = shapeIcon(sh);
-  // shakl darhol to'liq ko'rinsin
-  for (let i = 0; i < 60; i++) f.frame(i * 16);
-  b.appendChild(svg);
-  b.addEventListener("click", () => window.df.cmd("blob", { shape: sh }));
+  b.title = sh.name;
+  b.setAttribute("aria-label", sh.name);
+  const ic = miniIcon(34, (e) => (e.shape = sh.id));
+  icons.push(ic);
+  shapeIcons[sh.id] = ic;
+  b.appendChild(ic.c);
+  b.addEventListener("click", () => window.df.cmd("look", { shape: sh.id }));
   $("shapes").appendChild(b);
-  shapeBtns[sh] = b;
+  shapeBtns[sh.id] = b;
 }
 const colorBtns: Record<string, HTMLButtonElement> = {};
 for (const c of COLORS) {
   const b = document.createElement("button");
-  b.style.background = c;
-  b.setAttribute("aria-label", c);
-  b.addEventListener("click", () => window.df.cmd("blob", { color: c }));
+  b.style.background = c.hex;
+  b.title = c.name;
+  b.setAttribute("aria-label", c.name);
+  b.addEventListener("click", () => window.df.cmd("look", { color: c.hex }));
   $("colors").appendChild(b);
-  colorBtns[c] = b;
+  colorBtns[c.hex] = b;
 }
-let forced: { e: Expression; until: number; then?: Expression; thenUntil?: number } | null = null;
-function pokeExpr(e: Expression, ms: number, then?: Expression, thenMs = 0) {
-  const now = performance.now();
-  forced = { e, until: now + ms, then, thenUntil: now + ms + thenMs };
-}
-for (const e of Object.keys(EXPRESSIONS) as Expression[]) {
+for (const em of EMOTES) {
   const b = document.createElement("button");
   b.className = "chip";
-  b.textContent = EXPR_NAME[e];
-  b.addEventListener("click", () => pokeExpr(e, 2600));
-  $("exprs").appendChild(b);
+  b.textContent = em.name;
+  b.addEventListener("click", () => {
+    wake();
+    if (em.id === "dizzy") engine.onDizzy?.();
+    else if (em.id === "roll") engine.doRoll(950, 1);
+    else engine.triggerEmote(em.id, 2.2);
+  });
+  $("emotes").appendChild(b);
+}
+// ikonkalar kursorga qaramaydi, faqat bir marta chiziladi (va kiyim/rang o'zgarsa)
+const redrawIcons = () => icons.forEach((i) => i.draw());
+
+// ---------- Uyqu: 5 daqiqa harakatsizlikdan keyin uxlaydi, kursor yaqinlashsa uyg'onadi
+function sleep() {
+  if (asleep) return;
+  engine.triggerEmote("yawn", 1.6);
+  setTimeout(() => {
+    asleep = true;
+    engine.setState("sleeping");
+  }, 1400);
+}
+function wake() {
+  if (!asleep) return;
+  asleep = false;
+  engine.setState(baseState());
+  engine.triggerEmote("surprised", 0.7);
+  setTimeout(() => engine.triggerEmote("happy", 1.2), 750);
+  lastActiveAt = performance.now();
 }
 
-// ---------- Ovozlar
+// ---------- Silash: kursor kompanyon ustida u yoq-bu yoqqa yursa — yurakcha
+let pet = { active: false, since: 0, travel: 0, last: { x: 0, y: 0 } };
+let lastLove = 0;
+window.df.onCursor((c) => {
+  const prev = mouse;
+  mouse = c;
+  const b = botCenter();
+  // ko'zlar va bosh kursorga qaraydi
+  engine.lookX = Math.tanh((c.x - b.x) / 260);
+  engine.lookY = -Math.tanh((c.y - b.y) / 200);
+
+  const dist = Math.hypot(c.x - b.x, c.y - b.y);
+  if (asleep && dist < 130) wake();
+
+  const over = dist < Math.max(14, b.r);
+  const now = performance.now();
+  if (over && !asleep) {
+    if (!pet.active) {
+      pet = { active: true, since: now, travel: 0, last: c };
+      engine.blink();
+      engine.tgEs = 1.08;
+    } else {
+      pet.travel += Math.hypot(c.x - prev.x, c.y - prev.y);
+    }
+    if (now - pet.since > 1100 && pet.travel > 70 && now - lastLove > 5000) {
+      lastLove = now;
+      engine.triggerEmote("love", 2.2);
+      pet.travel = 0;
+    }
+  } else if (pet.active) {
+    pet.active = false;
+    engine.tgEs = 1;
+  }
+});
+
+// ---------- Jonli faoliyat
+let actTimer = 0;
+function showActivity(text: string, ms = 3600) {
+  if (view === "open" || view === "look") return;
+  $("act").textContent = text;
+  setView("activity");
+  clearTimeout(actTimer);
+  actTimer = window.setTimeout(() => {
+    if (view === "activity") setView(inside ? "peek" : "compact");
+  }, ms);
+}
+window.df.onActivity((a) => {
+  wake();
+  if (a.kind === "done") {
+    engine.setState("finished");
+    setTimeout(() => engine.setState(baseState()), 2600);
+  } else engine.triggerEmote("happy", 1.4);
+  showActivity(a.text);
+});
+
+// ---------- Ovozlar (o'zimizniki, juda yengil)
 let audio: AudioContext | null = null;
 window.df.onSound((kind) => {
   try {
@@ -236,65 +382,27 @@ window.df.onSound((kind) => {
   }
 });
 
-// ---------- Jonli faoliyat: muhim voqea bo'lsa orol qisqa kengayadi
-let actTimer = 0;
-function showActivity(text: string, ms = 3600) {
-  if (view === "open" || view === "look") return;
-  $("act").textContent = text;
-  setView("activity");
-  clearTimeout(actTimer);
-  actTimer = window.setTimeout(() => {
-    if (view === "activity") setView(inside ? "peek" : "collapsed");
-  }, ms);
-}
-window.df.onActivity((a) => {
-  if (a.kind === "done") pokeExpr("excited", 1400, "happy", 3000);
-  showActivity(a.text);
-});
+// ---------- Holat
 let lastBubble = "";
-
-// ---------- Kursor: yuz va avatar kursorga qaraydi
-const faceCenter = () => {
-  const r = faceSvg.getBoundingClientRect();
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-};
-window.df.onCursor((c) => {
-  const f = faceCenter();
-  face.lookAt((c.x - f.x) / 260, (c.y - f.y) / 140);
-  const a = avSvg.getBoundingClientRect();
-  avatar.lookAt((c.x - (a.left + a.width / 2)) / 320, (c.y - (a.top + a.height / 2)) / 220);
-});
-
-// ---------- Holat → ifoda
-let S0: State | null = null;
-function exprOf(s: State): Expression {
-  const now = performance.now();
-  if (forced) {
-    if (now < forced.until) return forced.e;
-    if (forced.then && now < (forced.thenUntil ?? 0)) return forced.then;
-    forced = null;
-  }
-  if (s.celebrate) return s.goalHit ? "proud" : "excited";
-  if (s.away) return "sad";
-  if (s.running && s.mode === "focus") return view === "peek" ? "curious" : "attentive";
-  if (s.running) return "happy";
-  if (s.hour >= 23 || s.hour < 6) return "sleepy";
-  if (s.lastAt && Date.now() - s.lastAt > 2 * 86_400_000) return "sad";
-  if (view === "peek") return "curious";
-  if (s.today === 0) return "shy";
-  return "neutral";
-}
-
 let chipsKey = "";
+let lookKey = "";
+let wasRunning = false;
+let lastGoalHit = false;
+
 function render(s: State) {
-  // o'ng qanot: vaqt
   const showTime = s.started || s.running;
   $("wtext").textContent = showTime ? s.time : "";
+  $("wtime").hidden = !showTime;
   const dot = $("wdot");
-  dot.hidden = !showTime;
   dot.className = !s.running ? "pause" : s.mode === "focus" ? "" : "brk";
 
-  // panel
+  // o'ng qanot: vaqt yo'q bo'lsa — bugungi sprintlar nuqtachalari
+  const dots = $("wdots");
+  dots.hidden = showTime;
+  const n = Math.min(4, Math.max(s.goal, 1));
+  if (dots.childElementCount !== n) dots.innerHTML = "<i></i>".repeat(n);
+  [...dots.children].forEach((d, i) => d.classList.toggle("on", i < s.today));
+
   $("ptime").textContent = s.time;
   $("plabel").textContent = `${s.method} · ${s.round ? `${s.label} · ${s.round}` : s.label}`;
   const tg = $("toggle");
@@ -328,15 +436,36 @@ function render(s: State) {
     }
   }
 
-  // ko'rinish
-  avatar.setShape(s.blobShape);
-  const light = ["#EEEDE8", "#E8B33A"].includes(s.blobColor);
-  avatar.setColors(s.blobColor, light ? "#1C1C1E" : "#fff");
-  face.setColors("#000", s.blobColor === "#111111" ? "#fff" : s.blobColor);
-  for (const [k, b] of Object.entries(shapeBtns)) b.classList.toggle("on", k === s.blobShape);
-  for (const [k, b] of Object.entries(colorBtns)) b.classList.toggle("on", k === s.blobColor);
+  // ko'rinish: kiyim, shakl, rang
+  const lk = `${s.outfit}|${s.bodyShape}|${s.bodyColor}`;
+  if (lk !== lookKey) {
+    const first = !lookKey;
+    lookKey = lk;
+    engine.setOutfit(s.outfit, !first);
+    engine.shape = s.bodyShape;
+    engine.setColor(s.bodyColor);
+    root.setProperty("--acc", s.bodyColor);
+    for (const ic of icons) {
+      ic.e.setColor(s.bodyColor);
+    }
+    for (const o of OUTFITS) outfitBtns[o.id].classList.toggle("on", o.id === s.outfit);
+    for (const sh of SHAPES) shapeBtns[sh.id].classList.toggle("on", sh.id === s.bodyShape);
+    for (const c of COLORS) colorBtns[c.hex].classList.toggle("on", c.hex === s.bodyColor);
+    redrawIcons();
+  }
 
-  // gap — notch'da qisqa faoliyat ko'rinishida
+  // holat o'zgarishlari
+  if (s.running && !wasRunning && s.mode === "focus") wake();
+  wasRunning = s.running;
+  if (s.goalHit && !lastGoalHit) setTimeout(() => engine.triggerEmote("proud", 2.4), 2700);
+  lastGoalHit = s.goalHit;
+  if (s.idleSec >= 300 && !s.running) sleep();
+  else if (s.hour >= 23 || s.hour < 6) {
+    if (!s.running && s.idleSec > 60) sleep();
+  }
+  const want = baseState();
+  if (engine.state !== want && engine.state !== "dizzy" && engine.state !== "finished") engine.setState(want);
+
   if (s.bubble !== lastBubble) {
     lastBubble = s.bubble;
     if (s.bubble) showActivity(s.bubble, 4200);
@@ -348,15 +477,52 @@ window.df.onState((s) => {
   render(s);
 });
 
+// ---------- Tasodifiy jonli harakatlar: har doim nimadir qilib turadi
+let nextAmbient = performance.now() + 6000;
+function ambient(now: number) {
+  if (now < nextAmbient) return;
+  nextAmbient = now + 7000 + Math.random() * 9000;
+  if (asleep || engine.state === "dizzy" || engine.state === "finished") return;
+  const r = Math.random();
+  if (r < 0.22) engine.triggerEmote("wink", 0.9);
+  else if (r < 0.42) engine.triggerEmote("happy", 1.1);
+  else if (r < 0.56) {
+    engine.anim("oy", [[-0.22, 130, (t) => 1 - Math.pow(1 - t, 3)], [0, 260, (t) => t]]);
+    engine.squash();
+  } else if (r < 0.66) engine.doRoll(900, 1);
+  else if (r < 0.8) {
+    engine.blink();
+    setTimeout(() => engine.blink(), 220);
+  } else if (r < 0.9) engine.triggerEmote("surprised", 0.6);
+  else engine.triggerEmote("love", 1.4);
+}
+
+// ---------- Chizish sikli
+let last = performance.now();
 function loop(now: number) {
-  if (S0) {
-    const e = exprOf(S0);
-    face.setExpression(e);
-    avatar.setExpression(e);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  // bir muddat tegilmasa va taymer ishlamasa — mini holatga kichrayadi
+  if (view === "compact" && !inside && !(S0?.running || S0?.started) && now - lastActiveAt > 6000) setView("mini");
+  if (view === "mini" && (S0?.running || S0?.started)) setView("compact");
+
+  ambient(now);
+  engine.update(dt);
+
+  const r = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.round(r.width * dpr);
+  const H = Math.round(r.height * dpr);
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W;
+    canvas.height = H;
   }
-  face.scale = view === "peek" || view === "activity" ? 1.08 : 1;
-  face.frame(now);
-  if (view === "open") avatar.frame(now);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, r.width, r.height);
+  engine.particleOverhang = r.height - r.width;
+  engine.draw(ctx, r.width, r.height);
   requestAnimationFrame(loop);
 }
+setView("compact");
 requestAnimationFrame(loop);
