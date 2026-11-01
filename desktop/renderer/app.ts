@@ -1,0 +1,206 @@
+// Ish stolidagi kompanyon oynasi: veb-ilovadagi o'sha WebGL dvigatel
+import { createCompanion, type Mood } from "../../lib/companion-engine";
+
+type State = {
+  mode: "focus" | "short" | "long";
+  running: boolean;
+  flowing: boolean;
+  time: string;
+  pct: number;
+  label: string;
+  round: string;
+  method: string;
+  canFinish: boolean;
+  started: boolean;
+  celebrate: boolean;
+  goalHit: boolean;
+  away: boolean;
+  today: number;
+  hour: number;
+  lastAt: number;
+  bubble: string;
+  look: number;
+};
+
+declare global {
+  interface Window {
+    df: {
+      onState: (cb: (s: State) => void) => void;
+      onSound: (cb: (k: string) => void) => void;
+      cmd: (c: string) => void;
+      poke: () => void;
+      interactive: (on: boolean) => void;
+      dragStart: (off: { x: number; y: number }) => void;
+      dragEnd: () => void;
+    };
+  }
+}
+
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const stage = $("stage");
+const pill = $("pill");
+const bubbleEl = $("bubble");
+const shadow = $("shadow");
+
+const engine = createCompanion({
+  gl: $<HTMLCanvasElement>("gl"),
+  lids: $<HTMLCanvasElement>("lids"),
+  back: $<HTMLCanvasElement>("back"),
+  base: "./companion/",
+  heightFrac: 0.86,
+  onLayout: (w) => (shadow.style.width = `${Math.round(w * 100)}%`),
+});
+
+// GPU WebGL kontekstini yo'qotsa (masalan videokarta almashganda), oynani qayta chizamiz
+$<HTMLCanvasElement>("gl").addEventListener("webglcontextlost", (e) => {
+  e.preventDefault();
+  setTimeout(() => location.reload(), 400);
+});
+
+// ---------- Sichqoncha: shaffof joylar orqali bosish o'tadi, kompanyon va tugmalar ushlanadi
+let hovering = false;
+for (const el of document.querySelectorAll<HTMLElement>(".hit")) {
+  el.addEventListener("mouseenter", () => {
+    hovering = true;
+    window.df.interactive(true);
+    render();
+  });
+  el.addEventListener("mouseleave", () => {
+    hovering = false;
+    if (!dragging) window.df.interactive(false);
+    render();
+  });
+}
+
+// ---------- Sudrash, bosish va ikki marta bosish
+let down: { x: number; y: number; cx: number; cy: number } | null = null;
+let dragging = false;
+let pokes: number[] = [];
+let dizzyUntil = 0;
+let lastClick = 0;
+
+stage.addEventListener("pointerdown", (e) => {
+  stage.setPointerCapture(e.pointerId);
+  down = { x: e.screenX, y: e.screenY, cx: e.clientX, cy: e.clientY };
+});
+stage.addEventListener("pointermove", (e) => {
+  if (!down || dragging) return;
+  if (Math.hypot(e.screenX - down.x, e.screenY - down.y) > 4) {
+    dragging = true;
+    stage.classList.add("dragging");
+    window.df.dragStart({ x: down.cx, y: down.cy });
+  }
+});
+stage.addEventListener("pointerup", () => {
+  if (dragging) {
+    window.df.dragEnd();
+    dragging = false;
+    stage.classList.remove("dragging");
+  } else if (down) {
+    const t = Date.now();
+    if (t - lastClick < 320) {
+      window.df.cmd("toggle"); // ikki marta bosish — boshlash / pauza
+      lastClick = 0;
+    } else {
+      lastClick = t;
+      engine?.poke();
+      window.df.poke();
+      pokes = pokes.filter((p) => t - p < 2000).concat(t);
+      if (pokes.length >= 5) {
+        pokes = [];
+        dizzyUntil = t + 3000;
+      }
+    }
+  }
+  down = null;
+});
+
+$("toggle").addEventListener("click", () => window.df.cmd("toggle"));
+$("reset").addEventListener("click", () => window.df.cmd("reset"));
+$("skip").addEventListener("click", () => window.df.cmd("skip"));
+$("menu").addEventListener("click", () => window.df.cmd("menu"));
+
+// ---------- Ovozlar
+let audio: AudioContext | null = null;
+window.df.onSound((kind) => {
+  try {
+    audio ??= new AudioContext();
+    const notes = kind === "tick" ? [880] : [523.25, 659.25, 783.99];
+    notes.forEach((f, i) => {
+      const o = audio!.createOscillator();
+      const g = audio!.createGain();
+      o.type = "sine";
+      o.frequency.value = f;
+      const t = audio!.currentTime + i * 0.16;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.16, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (kind === "tick" ? 0.35 : 1.1));
+      o.connect(g).connect(audio!.destination);
+      o.start(t);
+      o.stop(t + 1.2);
+    });
+  } catch {
+    /* ovoz chiqmasa ham davom etamiz */
+  }
+});
+
+// ---------- Holat
+let S: State | null = null;
+let mood: Mood = "idle";
+
+function moodOf(s: State): Mood {
+  const now = Date.now();
+  if (now < dizzyUntil) return "dizzy";
+  if (s.celebrate) return s.goalHit ? "surprised" : "happy";
+  if (s.away) return "wait";
+  if (s.running) return s.mode === "focus" ? "focus" : "idle";
+  if (s.hour >= 23 || s.hour < 6) return "sleep";
+  if (s.lastAt && now - s.lastAt > 2 * 86_400_000) return "tired";
+  if (s.today === 0) return "wait";
+  return "idle";
+}
+
+let lastBubble = "";
+function render() {
+  if (!S) return;
+  const m = moodOf(S);
+  if (m !== mood) {
+    mood = m;
+    engine?.setMood(m);
+  }
+  if (!hovering) engine?.look(S.look);
+  $("zzz").hidden = mood !== "sleep";
+
+  // Gap pufakchasi
+  if (S.bubble !== lastBubble) {
+    lastBubble = S.bubble;
+    if (S.bubble) bubbleEl.textContent = S.bubble;
+    bubbleEl.classList.toggle("show", !!S.bubble);
+  }
+
+  // Taymer: ishlayotganda doim ko'rinadi, ustiga kelinganda tugmalar ochiladi
+  $("time").textContent = S.time;
+  $("label").textContent = S.round ? `${S.label} · ${S.round}` : S.label;
+  pill.classList.toggle("visible", hovering || S.running || S.started);
+  pill.classList.toggle("open", hovering);
+  const tg = $("toggle");
+  tg.classList.toggle("running", S.running);
+  tg.setAttribute("aria-label", S.running ? "Pauza" : "Boshlash");
+  $("ic-play").toggleAttribute("hidden", S.running);
+  $("ic-pause").toggleAttribute("hidden", !S.running);
+  const sk = $<HTMLButtonElement>("skip");
+  if (S.flowing) {
+    sk.classList.add("text");
+    sk.textContent = "Tanaffus";
+    sk.disabled = !S.canFinish;
+  } else if (sk.classList.contains("text")) {
+    sk.classList.remove("text");
+    sk.disabled = false;
+    sk.innerHTML = '<svg viewBox="0 0 24 24"><path d="m6 5 9 7-9 7z"/><path d="M18 5v14"/></svg>';
+  }
+}
+
+window.df.onState((s) => {
+  S = s;
+  render();
+});

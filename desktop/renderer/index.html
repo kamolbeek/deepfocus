@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+<title>DeepFokus</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="bubble" class="bubble" role="status" aria-live="polite"></div>
+  <div id="stage" class="stage hit">
+    <div id="shadow" class="shadow"></div>
+    <canvas id="back"></canvas>
+    <canvas id="gl" role="img" aria-label="DeepFokus kompanyoni"></canvas>
+    <canvas id="lids"></canvas>
+    <div id="zzz" class="zzz" hidden><span>z</span><span>z</span><span>z</span></div>
+  </div>
+  <div id="pill" class="pill hit">
+    <div class="time-row">
+      <span id="time" class="time">25:00</span>
+      <span id="label" class="label">Fokus</span>
+    </div>
+    <div class="btns">
+      <button id="reset" class="b" title="Qaytadan" aria-label="Qaytadan">
+        <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+      <button id="toggle" class="b main" title="Boshlash / Pauza (⌥⌘F)" aria-label="Boshlash">
+        <svg id="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></svg>
+        <svg id="ic-pause" viewBox="0 0 24 24" hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button id="skip" class="b" title="Keyingisi" aria-label="Keyingisi">
+        <svg viewBox="0 0 24 24"><path d="m6 5 9 7-9 7z"/><path d="M18 5v14"/></svg>
+      </button>
+      <button id="menu" class="b" title="Menyu" aria-label="Menyu">
+        <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

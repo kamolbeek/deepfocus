@@ -1,0 +1,17 @@
+{
+  "name": "deepfokus-desktop",
+  "productName": "DeepFokus",
+  "version": "0.1.0",
+  "description": "DeepFokus kompanyoni — Mac ish stolida",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "build": "node build/build.mjs",
+    "pack": "npm run build && electron-packager . DeepFokus --platform=darwin --arch=arm64 --icon=build/icon.icns --app-bundle-id=uz.deepfokus.desktop --extend-info=build/extend.plist --out=dist --overwrite --ignore='^/(build|dist|renderer/.*\\.ts|node_modules/\\.bin)'"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^45.2.1",
+    "esbuild": "^0.28.2"
+  }
+}
