@@ -8,6 +8,7 @@ import {
   sendSignInLinkToEmail,
   signInWithEmailLink,
   signInWithPopup,
+  signInWithCustomToken,
   signInWithRedirect,
   signOut as fbSignOut,
   type User,
@@ -15,6 +16,7 @@ import {
 import { collection, doc, getDoc, getDocs, writeBatch, type Firestore } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { Session, Settings, Task } from "@/lib/store";
+import { telegram } from "@/lib/telegram";
 
 export type SyncStatus = "off" | "signed-out" | "syncing" | "synced" | "error";
 export type CloudUser = { uid: string; email: string | null; name: string | null };
@@ -139,9 +141,23 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
           .catch((e) => console.error("[DeepFokus] email havola xatosi", e))
           .finally(() => window.history.replaceState(null, "", window.location.pathname));
     }
-    return onAuthStateChanged(a, (u: User | null) =>
-      setUser(u ? { uid: u.uid, email: u.email, name: u.displayName } : null),
-    );
+    let tgTried = false;
+    return onAuthStateChanged(a, (u: User | null) => {
+      setUser(u ? { uid: u.uid, email: u.email, name: u.displayName } : null);
+      // Telegram ichida bo'lsa, Telegram hisobi bilan avtomatik kirish
+      const w = telegram();
+      if (!u && w && !tgTried) {
+        tgTried = true;
+        fetch("/api/telegram/auth", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ initData: w.initData }),
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d: { token?: string } | null) => (d?.token ? signInWithCustomToken(a, d.token) : null))
+          .catch((e) => console.error("[DeepFokus] Telegram orqali kirish xatosi", e));
+      }
+    });
   }, []);
 
   // Bulutdagini olib, shu qurilmadagi bilan birlashtirish
@@ -287,5 +303,11 @@ export function useCloudSync({ ready, tasks, setTasks, sessions, setSessions, se
     saveSnap(null);
   }, []);
 
-  return { enabled: !!auth, user, status, signInGoogle, signInEmail, signOut, refresh: pull };
+  const [inTelegram, setInTelegram] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInTelegram(!!telegram());
+  }, []);
+
+  return { enabled: !!auth, inTelegram, user, status, signInGoogle, signInEmail, signOut, refresh: pull };
 }
