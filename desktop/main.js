@@ -18,6 +18,7 @@ const fs = require("node:fs");
 const { spawn } = require("node:child_process");
 const os = require("node:os");
 const { METHODS, methodById } = require("./shared/methods.js");
+const { createAgents } = require("./agents.js");
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -26,8 +27,8 @@ const WEB_URL = "https://deepfocus-gilt.vercel.app";
 const PET_W = 230;
 const PET_H = 330;
 // Notch oynasi: ochilgan panel shu o'lchamga sig'adi
-const NOTCH_W = 460;
-const NOTCH_H = 400;
+const NOTCH_W = 620;
+const NOTCH_H = 460;
 
 // ---------- Mahalliy fayl: sozlamalar, sessiyalar, oyna joyi
 const storePath = () => path.join(app.getPath("userData"), "deepfokus.json");
@@ -45,8 +46,8 @@ const DEFAULTS = {
   petScale: 1,
   roam: true, // ish stolida yurib yurish
   outfit: "none", // notch'dagi kompanyon kiyimi
-  bodyShape: "ghost",
-  bodyColor: "#C8A5E7",
+  bodyShape: "round",
+  bodyColor: "",
   sessions: [],
 };
 let store = { ...DEFAULTS };
@@ -57,11 +58,12 @@ function loadStore() {
     store = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(storePath(), "utf8")) };
     if (store.pos && !(Number.isFinite(store.pos.x) && Number.isFinite(store.pos.y))) store.pos = null;
     if (!Number.isFinite(store.petScale)) store.petScale = 1;
-    // 0.4: notch'da arvohcha va o'zimizning lavanda rangi
-    if (!store.v04) {
-      store.v04 = true;
-      if (store.bodyShape === "round") store.bodyShape = "ghost";
-      if (store.bodyColor === "#A992EA") store.bodyColor = "#C8A5E7";
+    // 1.0: notch'da Mochi (Coucou dizayni, muallif ruxsati bilan)
+    if (!store.v10) {
+      store.v10 = true;
+      store.bodyShape = "round";
+      store.bodyColor = "";
+      store.outfit = "none";
     }
   } catch {
     store = { ...DEFAULTS };
@@ -321,6 +323,8 @@ function state() {
     bodyColor: store.bodyColor,
     idleSec: powerMonitor.getSystemIdleTime(),
     scale: store.petScale,
+    agents: agents ? agents.snapshot() : null,
+    sound: store.sound,
   };
 }
 const alive = (w) => w && !w.isDestroyed();
@@ -458,7 +462,7 @@ function createNotchWindow() {
   notchWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   notchWin.setIgnoreMouseEvents(true, { forward: true });
   notchWin.loadFile(path.join(__dirname, "renderer", "notch.html"), {
-    query: { mb: String(menuBar), notch: String(notchW), hasNotch: hasNotch ? "1" : "0", look: process.env.DF_LOOK ? "1" : "" },
+    query: { mb: String(menuBar), notch: String(notchW), hasNotch: hasNotch ? "1" : "0", look: process.env.DF_LOOK ? "1" : "", tab: process.env.DF_TAB || "" },
   });
   notchWin.once("ready-to-show", () => {
     if (store.mode === "notch" && !store.hidden) notchWin.showInactive();
@@ -872,6 +876,28 @@ ipcMain.on("interactive", (e, on) => {
     if (on) stopWalk();
   }
 });
+// ---------- Agentlar (Claude Code va boshqalar)
+let agents = null;
+ipcMain.on("agent", (_e, c, arg) => {
+  if (!agents) return;
+  if (c === "approve") agents.answer(String(arg?.id || ""), arg?.decision ?? null);
+  else if (c === "install") agents.install(String(arg));
+  else if (c === "uninstall") agents.uninstall(String(arg));
+  else if (c === "active") agents.setActive(String(arg?.id), !!arg?.on);
+  else if (c === "nasiya") agents.setNasiya(arg || {});
+  else if (c === "notify") {
+    store.agentNotify = !!arg;
+    saveStore();
+    push();
+  } else if (c === "open" && typeof arg === "string" && arg) shell.openPath(arg);
+  else if (c === "demo") agents.demo();
+  else if (c === "sound") {
+    store.sound = !!arg;
+    saveStore();
+    push();
+  }
+});
+
 ipcMain.on("cmd", (_e, c, arg) => {
   if (c === "toggle") toggle();
   else if (c === "skip") skip();
@@ -886,7 +912,7 @@ ipcMain.on("cmd", (_e, c, arg) => {
   else if (c === "look") {
     if (arg?.outfit) store.outfit = String(arg.outfit);
     if (arg?.shape) store.bodyShape = String(arg.shape);
-    if (arg?.color) store.bodyColor = String(arg.color);
+    if (arg?.color) store.bodyColor = arg.color === "none" ? "" : String(arg.color);
     saveStore();
     push();
   }
@@ -1056,6 +1082,10 @@ function watchIdle() {
 }
 
 app.whenReady().then(() => {
+  store.agentNotify ??= true;
+  agents = createAgents({ store, saveStore, onChange: () => push(), say, sound: (k) => store.sound && activeWin()?.webContents.send("sound", k) });
+  agents.start();
+  if (process.env.DF_DEMO) setTimeout(() => agents.demo(), 2500);
   loadStore();
   if (process.env.DF_MODE) store.mode = process.env.DF_MODE;
   T.remaining = dur("focus");

@@ -75,13 +75,13 @@ interface Particle {
 
 // ── Constants (MochiConst / PISTES.mochi) ─────────────────────────────────────
 
-const EYE_W = 0.3;
-const EYE_H = 0.34;
-const EYE_SP = 0.38;
+const EYE_W = 0.25;
+const EYE_H = 0.27;
+const EYE_SP = 0.37;
 const EYE_P = -0.12;
 const BASE_TOP: RGB = [0.929, 0.929, 0.937]; // #EDEDEF
 const BASE_BOTTOM: RGB = [0.769, 0.773, 0.792]; // #C4C5CA
-const INK = "rgb(36,26,48)"; // DeepFokus ko'zlari: to'q binafsha-qora
+const INK = "rgb(26,20,18)"; // #1A1412
 const MINI_INK = "rgb(16,19,26)"; // #10131A
 
 const C = {
@@ -117,11 +117,6 @@ export const BOT_STATES: Record<BotStateName, BotStateCfg> = {
   dizzy: { ...base, color: C.dizzy, tint: 0.7, eye: "spiral", badge: null },
 };
 
-// DeepFokus: tanani holat rangiga bo'yamaymiz va nishon chiqarmaymiz
-for (const k of Object.keys(BOT_STATES) as BotStateName[]) {
-  (BOT_STATES[k] as { tint: number }).tint = 0;
-  (BOT_STATES[k] as { badge: Badge | null }).badge = null;
-}
 
 /** State → sound, as in BotStateCfg.sound. */
 export const STATE_SOUND: Partial<Record<BotStateName, string>> = {
@@ -218,17 +213,21 @@ export class BotEngine {
   static onSound: ((name: string) => void) | null = null;
   isMini = false;
   /** DeepFokus: tana ranglari (yuqori yorug', past to'q), shakl va qo'llar */
-  palTop: RGB = hexToRGB("#DDC4F2");
-  palBottom: RGB = hexToRGB("#AF90CC");
-  shape: BodyShape = "ghost";
-  handsEnabled = false;
-  showAntenna = true;
-  /** Krem yuz niqobi (arvohchada yo'q — yuz tana rangida). */
+  /** Mochi: asl kulrang-oq gradient (Coucou). setColor bilan boshqa rangga bo'yash mumkin. */
+  palTop: RGB = BASE_TOP;
+  palBottom: RGB = BASE_BOTTOM;
+  shape: BodyShape = "round";
+  handsEnabled = true;
+  showAntenna = false;
   showFace = false;
-  /** Kichkina jilmayish (arvohcha uchun). */
-  showSmile = true;
+  showSmile = false;
 
-  setColor(hex: string) {
+  setColor(hex: string | null) {
+    if (!hex) {
+      this.palTop = BASE_TOP;
+      this.palBottom = BASE_BOTTOM;
+      return;
+    }
     const c = hexToRGB(hex);
     this.palTop = mix3(c, [1, 1, 1], 0.3);
     this.palBottom = mix3(c, [0, 0, 0], 0.12);
@@ -1175,14 +1174,6 @@ export class BotEngine {
         const hh = Math.max(h * this.open, w * 0.3);
         roundRectPath(x, -w / 2, -hh / 2, w, hh, Math.min(w / 2, hh / 2));
         x.fill();
-        // yaltiroq nuqta (ko'z ochiq bo'lsa)
-        if (hh > h * 0.55 && w > 2.2) {
-          x.fillStyle = "rgba(255,255,255,0.92)";
-          x.beginPath();
-          x.arc(w * 0.16, -hh * 0.2, Math.max(0.6, w * 0.19), 0, Math.PI * 2);
-          x.fill();
-          x.fillStyle = ink;
-        }
         break;
       }
       case "dot":

@@ -3,57 +3,83 @@
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
-<title>DeepFokus notch</title>
+<title>Momiq</title>
 <link rel="stylesheet" href="notch.css" />
 </head>
 <body>
-  <div id="island" class="island collapsed">
+  <div id="island" class="island compact">
     <i class="ear l"></i><i class="ear r"></i>
 
-    <!-- kompanyon: yig'ilganda chap qanotda, ochilganda panelda kattalashadi -->
-    <canvas id="bot" class="bot" role="img" aria-label="DeepFokus kompanyoni"></canvas>
+    <!-- Momiq: yig'ilganda chap qanotda, ochilganda kartada kattalashadi -->
+    <canvas id="bot" class="bot" role="img" aria-label="Momiq"></canvas>
     <div id="wtime" class="wtime"><b id="wdot"></b><span id="wtext"></span></div>
     <div id="wdots" class="wdots" aria-hidden="true"></div>
+    <div id="wpills" class="wpills" aria-hidden="true"></div>
     <div id="act" class="act" role="status" aria-live="polite"></div>
 
-    <!-- ochilgan panel -->
+    <!-- ochilgan panel (Coucou uslubida: tepada tablar, pastda karta) -->
     <div id="panel" class="panel">
-      <div id="main" class="view">
-        <div class="top">
-          <div id="avslot" class="avslot"></div>
-          <div class="timer">
-            <div id="ptime" class="ptime">25:00</div>
-            <div id="plabel" class="plabel">Pomodoro · Fokus</div>
-            <div class="ctrls">
-              <button id="reset" class="cb" aria-label="Qaytadan"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
-              <button id="toggle" class="cb main" aria-label="Boshlash">
-                <svg id="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></svg>
-                <svg id="ic-pause" viewBox="0 0 24 24" hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor" stroke="none"/></svg>
-              </button>
-              <button id="skip" class="cb" aria-label="Keyingisi"><svg viewBox="0 0 24 24"><path d="m6 5 9 7-9 7z"/><path d="M18 5v14"/></svg></button>
-              <button id="ask" class="askb" aria-label="Momiq'dan so'rash"><img src="ghost/smile.png" alt="" />Momiq</button>
-            </div>
-          </div>
-        </div>
-        <div id="chips" class="chips" role="group" aria-label="Usul"></div>
-        <div class="foot">
-          <span id="stats" class="stats"></span>
-          <span class="acts">
-            <button id="gear" class="lb" aria-label="Ko'rinish"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
-            <button id="desk" class="lb wide">Ish stoliga</button>
-            <button id="big" class="lb wide">To'liq oyna</button>
-          </span>
-        </div>
+      <div class="hdr">
+        <button class="tab on" data-v="timer" aria-label="Taymer"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/></svg></button>
+        <button class="tab" data-v="agents" aria-label="Agentlar"><svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="4"/><circle cx="9.5" cy="13" r="1.3" fill="currentColor" stroke="none"/><circle cx="14.5" cy="13" r="1.3" fill="currentColor" stroke="none"/><path d="M12 4v3"/></svg><b id="agentCount" class="cnt" hidden></b></button>
+        <button class="tab" id="tabChat" aria-label="Momiq bilan suhbat"><svg viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-5 4v-4A2.5 2.5 0 0 1 4 13.5z"/></svg></button>
+        <div id="hpills" class="hpills"></div>
+        <span class="sp"></span>
+        <button class="tab" data-v="look" aria-label="Sozlamalar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
+        <button class="tab" id="snd" aria-label="Ovoz"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L13 19V5L7.5 9.5z"/><path id="sndw" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
       </div>
 
-      <div id="look" class="view" hidden>
-        <div class="vhead"><button id="back" class="lb wide">← Orqaga</button><span>Ko'rinish</span></div>
-        <div class="row2">
-          
-          <div><div class="sec">Rang</div><div id="colors" class="grid colors"></div></div>
+      <div class="card">
+        <!-- Taymer -->
+        <div id="v-timer" class="view">
+          <div class="top">
+            <div class="avslot"></div>
+            <div class="timer">
+              <div id="ptime" class="ptime">25:00</div>
+              <div id="plabel" class="plabel">Pomodoro · Fokus</div>
+              <div class="ctrls">
+                <button id="reset" class="cb" aria-label="Qaytadan"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+                <button id="toggle" class="cb main" aria-label="Boshlash">
+                  <svg id="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></svg>
+                  <svg id="ic-pause" viewBox="0 0 24 24" hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor" stroke="none"/></svg>
+                </button>
+                <button id="skip" class="cb" aria-label="Keyingisi"><svg viewBox="0 0 24 24"><path d="m6 5 9 7-9 7z"/><path d="M18 5v14"/></svg></button>
+                <span class="sp"></span>
+                <button id="desk" class="lb wide">Ish stoliga</button>
+                <button id="big" class="lb wide">To'liq oyna</button>
+              </div>
+            </div>
+          </div>
+          <div id="chips" class="chips" role="group" aria-label="Usul"></div>
+          <div class="foot"><span id="stats" class="stats"></span></div>
         </div>
-        <div class="sec">O'ynash</div>
-        <div id="emotes" class="chips wrap"></div>
+
+        <!-- Agentlar -->
+        <div id="v-agents" class="view" hidden>
+          <div id="sess" class="sess"></div>
+          <div id="detail" class="detail"></div>
+        </div>
+
+        <!-- Sozlamalar / ko'rinish -->
+        <div id="v-look" class="view scroll" hidden>
+          <div class="sec">Agentlar · hook'lar</div>
+          <div id="hooks" class="rows"></div>
+          <div class="sec">Notch'dagi pill'lar</div>
+          <div id="pillsCfg" class="rows"></div>
+          <div id="nasiyaCfg" class="rows" hidden>
+            <label class="fld"><span>Nomi</span><input id="nzLabel" placeholder="Nasiya" /></label>
+            <label class="fld"><span>JSON manzili</span><input id="nzUrl" placeholder="https://…/api/stat" /></label>
+            <label class="fld"><span>Maydon</span><input id="nzPath" placeholder="masalan: today.count" /></label>
+            <button id="nzSave" class="lb wide">Saqlash</button>
+          </div>
+          <label class="row"><span>Tugaganda va ruxsat so'raganda bildirishnoma</span><input id="notify" type="checkbox" /></label>
+          <div class="sec">Kiyim</div>
+          <div id="outfits" class="grid outfits"></div>
+          <div class="sec">Rang</div>
+          <div id="colors" class="grid colors"></div>
+          <div class="sec">O'ynash</div>
+          <div id="emotes" class="chips wrap"></div>
+        </div>
       </div>
     </div>
   </div>

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("df", {
   chatClose: () => ipcRenderer.send("chat-close"),
   chatFiles: (paths) => ipcRenderer.send("chat-files", paths),
   cmd: (c, arg) => ipcRenderer.send("cmd", c, arg),
+  agent: (c, arg) => ipcRenderer.send("agent", c, arg),
   poke: () => ipcRenderer.send("poke"),
   interactive: (v) => ipcRenderer.send("interactive", v),
   dragStart: (off) => ipcRenderer.send("drag-start", off),
