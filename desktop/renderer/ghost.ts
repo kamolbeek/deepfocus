@@ -175,7 +175,10 @@ export class GhostSprite {
     }
   }
 
+  /** Fayl ustiga olib kelinganda: og'zi ochiq (asl rasmdagi og'zi ochiq holat) va ozgina kattalashadi. */
+  hungry = false;
   private pose(): Pose {
+    if (this.hungry) return "wave";
     if (this.state === "sleeping") return "sleep";
     const e = this.t < this.emoteUntil ? this.emote : null;
     if (e === "yawn") return "sleep";
@@ -190,7 +193,7 @@ export class GhostSprite {
     const asleep = this.state === "sleeping";
     this.lx += ((asleep ? 0 : this.lookX) - this.lx) * k;
     this.ly += ((asleep ? 0 : this.lookY) - this.ly) * k;
-    this.es += (this.tgEs - this.es) * k;
+    this.es += ((this.hungry ? 1.14 : this.tgEs) - this.es) * k;
     // kursor ancha chapda bo'lsa — o'sha tomonga o'giriladi (rasm ko'zguda aylanadi)
     if (!asleep) {
       if (this.lookX < -0.35) this.face = -1;

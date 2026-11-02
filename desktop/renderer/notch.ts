@@ -40,6 +40,9 @@ declare global {
       onSound: (cb: (k: string) => void) => void;
       onTestOpen: (cb: () => void) => void;
       onGeom: (cb: (g: { mb: number; notch: number }) => void) => void;
+      pathsFor: (files: FileList | File[]) => string[];
+      fileIcon: (p: string) => Promise<string>;
+      chatFiles: (paths: string[]) => void;
       cmd: (c: string, arg?: unknown) => void;
       poke: () => void;
       interactive: (on: boolean) => void;
@@ -299,6 +302,66 @@ window.df.onCursor((c) => {
     pet.active = false;
     engine.tgEs = 1;
   }
+});
+
+// ---------- Fayl yutish: faylni notch'ga olib kelsa og'zini ochadi, tashlasa yutib yuboradi
+let dragDepth = 0;
+window.addEventListener("dragenter", (e) => {
+  e.preventDefault();
+  dragDepth++;
+  wake();
+  engine.hungry = true;
+  if (view === "mini" || view === "compact" || view === "activity") setView("peek");
+});
+window.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+});
+window.addEventListener("dragleave", () => {
+  if (--dragDepth > 0) return;
+  dragDepth = 0;
+  engine.hungry = false;
+  if (view === "peek" && !inside) setView("compact");
+});
+window.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  const files = Array.from(e.dataTransfer?.files ?? []);
+  const paths = window.df.pathsFor(files);
+  if (!paths.length) {
+    engine.hungry = false;
+    return;
+  }
+  const b = botCenter();
+  await Promise.all(
+    paths.slice(0, 4).map(async (p, i) => {
+      const f = files[i];
+      const el = document.createElement("img");
+      el.className = "food";
+      el.src = f && f.type.startsWith("image/") ? URL.createObjectURL(f) : await window.df.fileIcon(p);
+      const x0 = e.clientX + i * 8;
+      const y0 = e.clientY + 24 + i * 5;
+      el.style.left = `${x0}px`;
+      el.style.top = `${y0}px`;
+      document.body.appendChild(el);
+      const a = el.animate(
+        [
+          { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+          { transform: `translate(calc(-50% + ${b.x - x0}px), calc(-50% + ${b.y - y0}px)) scale(.08)`, opacity: 0 },
+        ],
+        { duration: 600 + i * 80, easing: "cubic-bezier(.5,0,.7,1)", fill: "forwards" },
+      );
+      await a.finished.catch(() => {});
+      el.remove();
+    }),
+  );
+  engine.hungry = false;
+  engine.squash();
+  engine.triggerEmote("happy", 1.6);
+  window.df.chatFiles(paths);
+  setTimeout(() => {
+    if (view === "peek" && !inside) setView("compact");
+  }, 900);
 });
 
 // ---------- Jonli faoliyat

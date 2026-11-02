@@ -334,9 +334,26 @@ function push() {
 // Kursor holatini tez-tez (30 marta/soniya) yuboramiz: ko'zlar silliq kuzatadi
 let petCatch = false;
 let petIgnore = true;
+// notch: fayl sudrab kelinganda orol ustida oyna sichqonchani qabul qiladi
+let notchCatch = false;
+let notchIgnore = true;
+let notchHover = false;
 function sendCursor() {
   const c = screen.getCursorScreenPoint();
   followCursorDisplay(c);
+  if (alive(notchWin) && notchWin.isVisible() && store.mode === "notch") {
+    const b = notchWin.getBounds();
+    const mid = b.x + b.width / 2;
+    const { menuBar } = notchGeometry();
+    // faqat menyu satridagi orol qismi — pastdagi ilovalarga bosish to'silmasin
+    const inside = Math.abs(c.x - mid) < 150 && c.y >= b.y && c.y < b.y + menuBar + 2;
+    notchCatch = inside;
+    const ignore = !(notchHover || inside);
+    if (ignore !== notchIgnore) {
+      notchIgnore = ignore;
+      notchWin.setIgnoreMouseEvents(ignore, { forward: true });
+    }
+  }
   // ish stolidagi kompanyon ustiga kursor kelsa (fayl sudralayotganda ham) — oyna uni qabul qiladi
   if (alive(pet) && pet.isVisible() && !drag && !resizing) {
     const b = pet.getBounds();
@@ -843,6 +860,11 @@ ipcMain.on("interactive", (e, on) => {
   if (w === pet) {
     const ignore = !(on || petCatch);
     petIgnore = ignore;
+    w.setIgnoreMouseEvents(ignore, { forward: true });
+  } else if (w === notchWin) {
+    notchHover = on;
+    const ignore = !(on || notchCatch);
+    notchIgnore = ignore;
     w.setIgnoreMouseEvents(ignore, { forward: true });
   } else w?.setIgnoreMouseEvents(!on, { forward: true });
   if (w === pet) {
