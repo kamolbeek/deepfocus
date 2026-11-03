@@ -19,6 +19,7 @@ const { spawn } = require("node:child_process");
 const os = require("node:os");
 const { METHODS, methodById } = require("./shared/methods.js");
 const { createAgents } = require("./agents.js");
+const voice = require("./voice.js");
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -623,8 +624,12 @@ function stopWalk() {
 
 // ---------- Momiq: Claude obunasi (kompyuterdagi Claude Code) orqali savol-javob — API kalit kerak emas
 const MOMIQ_SYS =
-  "Sen Momiq — DeepFokus fokus ilovasidagi yoqimtoy arvohcha yordamchisan. Foydalanuvchi bilan o'zbek tilida, " +
-  "samimiy, qisqa va aniq gaplash. Fayl berilsa, uni o'qib, mazmunini va eng muhim jihatlarini tushuntir.";
+  "Sen Momiq — DeepFokus fokus ilovasidagi yoqimtoy kompanyon yordamchisan. Odatda o'zbek tilida, samimiy, qisqa va aniq gaplash. " +
+  "Foydalanuvchi qaysi tilda yozsa yoki gapirsa, o'sha tilda javob ber; agar u «falon tilda gapir» desa, keyingi javoblarni to'liq o'sha tilda ber, u boshqa til so'ramaguncha. " +
+  "Fayl berilsa, uni o'qib, mazmunini va eng muhim jihatlarini tushuntir.";
+const MOMIQ_VOICE_SYS =
+  "Hozir OVOZLI suhbat: javobing ovoz bilan o'qib beriladi. 1–3 jumla, jonli so'zlashuv tilida, ro'yxat, markdown, kod va emoji ishlatma. " +
+  "Javob oxirida alohida qatorda javob tilini ISO 639-1 kodi bilan yoz, masalan: [lang: uz]";
 let chatWin = null;
 let chatLog = [];
 let chatContinue = false;
@@ -700,21 +705,31 @@ function openChat() {
     chatPush();
   }
 }
-async function askMomiq(text, files = []) {
+async function askMomiq(text, files = [], opts = {}) {
   if (chatBusy) return;
+  const viaVoice = !!opts.voice;
   files = files.filter((f) => typeof f === "string" && f && fs.existsSync(f));
   text = String(text || "").trim();
   if (!text && !files.length) return;
   openChat();
   const names = files.map((f) => path.basename(f));
-  chatLog.push({ role: "user", text: text || "", files: names });
+  chatLog.push({ role: "user", text: text || "", files: names, voice: viaVoice });
   chatBusy = true;
   chatPush();
   const finish = (reply, error = false) => {
     chatBusy = false;
-    chatLog.push({ role: "momiq", text: reply, error });
+    let lang = "";
+    if (viaVoice && !error) {
+      const m = reply.match(/\n?\s*\[lang:\s*([a-z]{2,3})\]\s*$/i);
+      if (m) {
+        lang = m[1].toLowerCase();
+        reply = reply.slice(0, m.index).trim();
+      }
+    }
+    chatLog.push({ role: "momiq", text: reply, error, voice: viaVoice });
     chatPush();
     if (store.mode === "desktop" && !error) say("Javob tayyor! 👻", 3500);
+    if (viaVoice && !error && store.voiceReply !== false) speakOut(reply, lang);
   };
   const { PATH, claude } = await findClaude();
   if (!claude) {
@@ -730,7 +745,7 @@ async function askMomiq(text, files = []) {
   }
   const dir = path.join(app.getPath("userData"), "momiq");
   fs.mkdirSync(dir, { recursive: true });
-  const args = ["-p", prompt, "--output-format", "text", "--append-system-prompt", MOMIQ_SYS];
+  const args = ["-p", prompt, "--output-format", "text", "--append-system-prompt", viaVoice ? `${MOMIQ_SYS}\n${MOMIQ_VOICE_SYS}` : MOMIQ_SYS];
   if (chatContinue) args.push("--continue");
   if (files.length) {
     args.push("--allowedTools", "Read");
@@ -773,6 +788,66 @@ async function askMomiq(text, files = []) {
   });
 }
 ipcMain.on("chat-send", (_e, m) => askMomiq(m?.text, Array.isArray(m?.files) ? m.files : []));
+
+// ---------- Ovoz: eshitish (ElevenLabs Scribe) → Claude → gapirish (Eleven v3)
+function voiceStatus(status, extra = {}) {
+  for (const w of [chatWin, notchWin, pet]) if (alive(w)) w.webContents.send("voice", { status, ...extra });
+}
+async function speakOut(text, lang = "") {
+  if (!voice.hasKey() || !text) return;
+  try {
+    voiceStatus("speaking");
+    const mp3 = await voice.speak(text, store.voiceId || "", lang);
+    if (alive(chatWin)) chatWin.webContents.send("voice-audio", mp3.toString("base64"));
+    else voiceStatus("idle");
+  } catch (e) {
+    voiceStatus("error", { message: e.message });
+  }
+}
+ipcMain.handle("voice-stt", async (_e, { data, mime }) => {
+  try {
+    voiceStatus("thinking");
+    const buf = Buffer.from(data, "base64");
+    const r = await voice.transcribe(buf, mime || "audio/webm", store.voiceLang || "");
+    if (!r.text) {
+      voiceStatus("idle");
+      return { ok: true, text: "" };
+    }
+    askMomiq(r.text, [], { voice: true, lang: r.lang });
+    return { ok: true, text: r.text, lang: r.lang };
+  } catch (e) {
+    voiceStatus("error", { message: e.message });
+    return { ok: false, error: e.message };
+  }
+});
+ipcMain.on("voice-done", () => voiceStatus("idle"));
+ipcMain.on("voice-listening", () => voiceStatus("listening"));
+ipcMain.on("voice-say", (_e, text) => speakOut(String(text || "")));
+ipcMain.handle("voice-settings", async () => {
+  let voices = [];
+  let account = null;
+  if (voice.hasKey()) {
+    try {
+      voices = await voice.voices();
+      account = await voice.check();
+    } catch (e) {
+      account = { ok: false, error: e.message };
+    }
+  }
+  return { hasKey: voice.hasKey(), voices, account, voiceId: store.voiceId || "", voiceReply: store.voiceReply !== false, voiceLang: store.voiceLang || "" };
+});
+ipcMain.on("voice-config", (_e, c) => {
+  if (typeof c?.key === "string") voice.setKey(c.key);
+  if (typeof c?.voiceId === "string") store.voiceId = c.voiceId;
+  if (typeof c?.voiceReply === "boolean") store.voiceReply = c.voiceReply;
+  if (typeof c?.voiceLang === "string") store.voiceLang = c.voiceLang;
+  saveStore();
+  push();
+});
+function startVoice() {
+  openChat();
+  setTimeout(() => alive(chatWin) && chatWin.webContents.send("voice-start"), alive(chatWin) && chatWin.isVisible() ? 50 : 500);
+}
 ipcMain.on("chat-new", () => {
   if (chatBusy) return;
   chatLog = [];
@@ -904,6 +979,7 @@ ipcMain.on("cmd", (_e, c, arg) => {
   else if (c === "reset") reset();
   else if (c === "menu") tray?.popUpContextMenu();
   else if (c === "chat") openChat();
+  else if (c === "voice") startVoice();
   else if (c === "method") chooseMethod(arg);
   else if (c === "desktop") setAppMode("desktop");
   else if (c === "notch") setAppMode("notch");
@@ -1020,6 +1096,7 @@ function rebuildMenu() {
     { type: "separator" },
     { label: "To'liq oynani ochish", accelerator: "Alt+Cmd+D", click: openBig },
     { label: "Momiq'dan so'rash", accelerator: "Alt+Cmd+M", click: openChat },
+    { label: "Momiq bilan gaplashish", accelerator: "Alt+Cmd+V", click: startVoice },
     { label: "Ovoz", type: "checkbox", checked: store.sound, click: (i) => ((store.sound = i.checked), saveStore()) },
     {
       label: "Kompyuter yonganda ochilsin",
@@ -1103,6 +1180,7 @@ app.whenReady().then(() => {
   globalShortcut.register("Alt+Command+H", () => setHidden(!store.hidden));
   globalShortcut.register("Alt+Command+D", openBig);
   globalShortcut.register("Alt+Command+M", openChat);
+  globalShortcut.register("Alt+Command+V", startVoice);
 
   setInterval(tick, 250);
   setInterval(sendCursor, 33);
@@ -1114,6 +1192,23 @@ app.whenReady().then(() => {
   screen.on("display-metrics-changed", replace);
   screen.on("display-added", replace);
   screen.on("display-removed", replace);
+  if (process.env.DF_VOICETEST) {
+    setTimeout(async () => {
+      voice.setKey("test-key");
+      try {
+        const r = await voice.transcribe(Buffer.from("xx"), "audio/webm");
+        console.log("[voicetest] stt:", JSON.stringify(r));
+        await askMomiq(r.text, [], { voice: true, lang: r.lang });
+      } catch (e) {
+        console.log("[voicetest] err:", e.message);
+      }
+    }, 1500);
+    setTimeout(async () => {
+      if (alive(chatWin)) fs.writeFileSync("/tmp/chatwin.png", (await chatWin.webContents.capturePage()).toPNG());
+      console.log("[voicetest] log:", JSON.stringify(chatLog));
+      app.quit();
+    }, 9000);
+  }
   if (process.env.DF_ASK) {
     setTimeout(() => askMomiq(process.env.DF_ASK, process.env.DF_ASKFILE ? [process.env.DF_ASKFILE] : []), 1500);
     setTimeout(async () => {

@@ -34,6 +34,7 @@ declare global {
       onSound: (cb: (k: string) => void) => void;
       onTestOpen: (cb: () => void) => void;
       onGeom: (cb: (g: { mb: number; notch: number }) => void) => void;
+      onVoice: (cb: (v: { status: string; message?: string }) => void) => void;
       cmd: (c: string, arg?: unknown) => void;
       agent: (c: string, arg?: unknown) => void;
       poke: () => void;
@@ -130,6 +131,22 @@ function setTab(t: Tab) {
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>(".tab[data-v]")) b.addEventListener("click", () => setTab(b.dataset.v as Tab));
 $("tabChat").addEventListener("click", () => window.df.cmd("chat"));
+$("tabVoice").addEventListener("click", () => window.df.cmd("voice"));
+// ovozli suhbat: Momiq tinglaganda qidiryapti, o'ylaganda o'ylayapti, gapirganda sakrab-sakrab turadi
+let voiceSt = "idle";
+window.df.onVoice((v) => {
+  voiceSt = v.status;
+  if (v.status === "listening" || v.status === "thinking" || v.status === "speaking") wake();
+  if (v.status === "speaking") talk();
+});
+let talkT = 0;
+function talk() {
+  clearInterval(talkT);
+  talkT = window.setInterval(() => {
+    if (voiceSt !== "speaking") return clearInterval(talkT);
+    engine.anim("oy", [[-0.08 - Math.random() * 0.08, 110, (t) => 1 - Math.pow(1 - t, 2)], [0, 160, (t) => t]]);
+  }, 320);
+}
 $("snd").addEventListener("click", () => window.df.agent("sound", !(S0?.sound ?? true)));
 
 // ---------- Momiq
@@ -727,7 +744,7 @@ function render(s: State) {
   if (s.idleSec >= 300 && !s.running) sleep();
   else if ((s.hour >= 23 || s.hour < 6) && !s.running && s.idleSec > 60) sleep();
   const pendingState = s.agents?.sessions.find((x) => x.pending)?.state;
-  const want = pendingState && !asleep ? pendingState : baseState();
+  const want: BotStateName = voiceSt === "listening" ? "searching" : voiceSt === "thinking" ? "thinking" : pendingState && !asleep ? pendingState : baseState();
   if (engine.state !== want && engine.state !== "dizzy" && engine.state !== "finished") engine.setState(want);
 
   if (s.bubble !== lastBubble) {

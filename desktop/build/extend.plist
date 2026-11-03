@@ -6,6 +6,8 @@
   <true/>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.productivity</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Momiq sizni eshitishi uchun mikrofon kerak.</string>
   <key>NSHumanReadableCopyright</key>
   <string>DeepFokus · Kamoliddin Ashurov</string>
 </dict>

@@ -6,7 +6,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; background: 
 .card { position: absolute; inset: 0; background: #121214; display: flex; flex-direction: column; overflow: hidden; }
 header { display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 14px; -webkit-app-region: drag; }
 header button { -webkit-app-region: no-drag; }
-.av { width: 30px; height: 30px; object-fit: contain; }
+.av { width: 30px; height: 30px; }
 .ttl { flex: 1; display: flex; flex-direction: column; line-height: 1.2; }
 .ttl b { font-size: 14px; }
 .ttl span { font-size: 11px; color: #8E8E93; }
@@ -23,7 +23,7 @@ main { flex: 1; overflow-y: auto; padding: 4px 14px 10px; display: flex; flex-di
 .fchips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
 .fchip { font-size: 11.5px; background: rgba(255,255,255,.16); padding: 2px 8px; border-radius: 9px; }
 .empty { margin: auto; text-align: center; color: #8E8E93; font-size: 13px; line-height: 1.5; padding: 20px; }
-.empty img { width: 72px; display: block; margin: 0 auto 8px; }
+.empty canvas { width: 90px; height: 90px; display: block; margin: 0 auto 4px; }
 .typing { align-self: flex-start; background: #2C2C2E; border-radius: 16px; padding: 11px 14px; display: flex; gap: 4px; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: #8E8E93; animation: b 1s infinite; }
 .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
@@ -38,3 +38,26 @@ textarea { flex: 1; resize: none; background: #2C2C2E; border: 0; outline: 0; co
 .send:disabled { opacity: .4; cursor: default; }
 .send svg { width: 17px; height: 17px; fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .drop { position: absolute; inset: 0; border-radius: 10px; background: rgba(94,92,230,.22); border: 2px dashed #8E8CFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
+
+/* Ovoz */
+.mic { width: 32px; height: 32px; border-radius: 50%; background: #2C2C2E; display: flex; align-items: center; justify-content: center; flex: none; color: #fff; }
+.mic svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.mic.on { background: #FF453A; animation: pulse 1.2s ease-in-out infinite; }
+.mic.busy { opacity: .5; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,69,58,.5); } 50% { box-shadow: 0 0 0 8px rgba(255,69,58,0); } }
+.vstat { display: flex; align-items: center; gap: 8px; margin: 0 12px 6px; padding: 7px 10px; border-radius: 12px; background: #1C1C1E; font-size: 12.5px; color: #D1D1D6; }
+.vstat i { width: 8px; height: 8px; border-radius: 50%; background: #FF453A; animation: pulse 1.2s infinite; }
+.vstat.thinking i { background: #7B79FF; } .vstat.speaking i { background: #34C759; } .vstat.error i { background: #FF9F0A; animation: none; }
+.vstat span { flex: 1; }
+.vstat button { font-size: 12px; color: #8E8E93; }
+.vpanel { position: absolute; inset: 0; background: #121214; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.vh { display: flex; align-items: center; justify-content: space-between; font-size: 15px; }
+.vp { font-size: 12px; color: #8E8E93; line-height: 1.45; }
+.lnk { color: #7B79FF; cursor: pointer; }
+.vf { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8E8E93; }
+.vf.row { flex-direction: row; align-items: center; gap: 8px; color: #fff; font-size: 13px; }
+.vf input[type=password], .vf select { background: #2C2C2E; border: 0; outline: 0; color: #fff; border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 13px; }
+.vf input[type=checkbox] { width: 16px; height: 16px; accent-color: #5E5CE6; }
+.vbtns { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+.vinfo { font-size: 11.5px; color: #8E8E93; flex: 1; }
+.msg.voice::before { content: "🎙 "; opacity: .6; }

@@ -9,18 +9,30 @@
 <body>
   <div id="card" class="card">
     <header>
-      <img src="ghost/main.png" alt="" class="av" />
+      <canvas id="av" class="av" width="60" height="60"></canvas>
       <div class="ttl"><b>Momiq</b><span>Claude obunangiz orqali</span></div>
+      <button id="vset" class="hb" title="Ovoz sozlamalari">Ovoz</button>
       <button id="new" class="hb" title="Yangi suhbat">Yangi</button>
       <button id="close" class="hb x" aria-label="Yopish">✕</button>
     </header>
     <main id="log" aria-live="polite"></main>
     <div id="files" class="files" hidden></div>
+    <div id="vstat" class="vstat" hidden><i></i><span id="vtext">Tinglayapman…</span><button id="vstop" type="button">To'xtatish</button></div>
     <form id="form">
-      <textarea id="q" rows="1" placeholder="Momiq'dan so'rang yoki fayl tashlang…"></textarea>
+      <button id="mic" class="mic" type="button" aria-label="Gapirish (⌥⌘V)"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <textarea id="q" rows="1" placeholder="Momiq'dan so'rang…"></textarea>
       <button id="send" class="send" aria-label="Yuborish"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </form>
     <div id="drop" class="drop" hidden>Faylni shu yerga tashlang</div>
+    <div id="vpanel" class="vpanel" hidden>
+      <div class="vh"><b>Ovoz</b><button id="vclose" class="hb x">✕</button></div>
+      <p class="vp">Eshitish — ElevenLabs Scribe (o'zbekcha va yana 98 til), gapirish — Eleven v3. Kalitni <span class="lnk" id="vlink">elevenlabs.io → Profile → API keys</span> dan olasiz. Miya — Claude obunangiz.</p>
+      <label class="vf"><span>API kalit</span><input id="vkey" type="password" placeholder="sk_…" /></label>
+      <label class="vf"><span>Ovoz</span><select id="vvoice"></select></label>
+      <label class="vf"><span>Eshitish tili</span><select id="vlang"><option value="">Avto (har qanday til)</option><option value="uzb">O'zbek</option><option value="rus">Rus</option><option value="eng">Ingliz</option><option value="tur">Turk</option></select></label>
+      <label class="vf row"><input id="vreply" type="checkbox" /><span>Javobni ovoz bilan o'qib bersin</span></label>
+      <div class="vbtns"><button id="vsave" class="hb">Saqlash</button><button id="vtest" class="hb">Sinab ko'rish</button><span id="vinfo" class="vinfo"></span></div>
+    </div>
   </div>
   <script src="chat.js"></script>
 </body>
