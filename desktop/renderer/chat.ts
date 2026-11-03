@@ -290,7 +290,7 @@ async function openVoicePanel() {
   $<HTMLInputElement>("vreply").checked = s.voiceReply;
   $<HTMLInputElement>("vkey").value = "";
   $<HTMLInputElement>("vkey").placeholder = s.hasKey ? "Kalit saqlangan — almashtirish uchun yangisini yozing" : "sk_…";
-  $("vinfo").textContent = s.account ? (s.account.ok ? `Ulangan · ${s.account.tier} · ${s.account.used}/${s.account.limit} belgi` : s.account.error || "") : "";
+  $("vinfo").textContent = s.account ? (s.account.ok ? (s.account.limit ? `Ulangan · ${s.account.tier} · ${s.account.used}/${s.account.limit} belgi` : "Ulangan") : s.account.error || "") : "";
 }
 $("vset").addEventListener("click", openVoicePanel);
 $("vclose").addEventListener("click", () => (vpanel.hidden = true));

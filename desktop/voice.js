@@ -37,8 +37,14 @@ async function call(url, init = {}) {
       const j = await r.json();
       msg = j?.detail?.message || j?.detail?.status || j?.detail || JSON.stringify(j).slice(0, 200);
     } catch {}
-    if (r.status === 401) throw new Error("ElevenLabs kaliti noto'g'ri yoki muddati tugagan");
-    throw new Error(`ElevenLabs: ${msg}`);
+    const m = String(msg);
+    if (/missing_permissions|permission/i.test(m)) {
+      const need = /speech_to_text|speech-to-text/i.test(m) ? "Speech to Text" : /text_to_speech|text-to-speech/i.test(m) ? "Text to Speech" : /user_read|user/i.test(m) ? "User (read)" : m;
+      throw new Error(`Kalitda «${need}» ruxsati yo'q. elevenlabs.io → API Keys → kalit → Edit → shu ruxsatni yoqing (yoki cheklovsiz yangi kalit yarating)`);
+    }
+    if (r.status === 401) throw new Error(`ElevenLabs kaliti qabul qilinmadi (${m})`);
+    if (r.status === 402 || /quota|credits|exceeded/i.test(m)) throw new Error("ElevenLabs kreditlari tugagan");
+    throw new Error(`ElevenLabs: ${m}`);
   }
   return r;
 }
@@ -94,9 +100,16 @@ async function defaultVoice() {
   return pick?.id || "JBFqnCBsd6RMkjVDRZzb";
 }
 async function check() {
-  const r = await call(`${API}/user/subscription`);
-  const j = await r.json();
-  return { ok: true, tier: j.tier, used: j.character_count, limit: j.character_limit };
+  try {
+    const r = await call(`${API}/user/subscription`);
+    const j = await r.json();
+    return { ok: true, tier: j.tier, used: j.character_count, limit: j.character_limit };
+  } catch (e) {
+    // kalit cheklangan bo'lsa hisob ma'lumoti o'qilmaydi — ovozlar yuklansa, kalit ishlayapti
+    const v = await voices();
+    if (v.length) return { ok: true, tier: "ulangan", used: 0, limit: 0, note: "hisob ma'lumoti yopiq" };
+    throw e;
+  }
 }
 
 module.exports = { hasKey, setKey, transcribe, speak, voices, check };
